@@ -1,0 +1,8 @@
+node_modules/
+server/data/db.json
+server/data/uploads/
+*.xlsx
+~$*
+.env
+.DS_Store
+Thumbs.db

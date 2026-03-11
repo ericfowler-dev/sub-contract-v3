@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSI Sub-Contract Dashboard</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <h1>PSI Field Service Sub-Contract Dashboard</h1>
+      <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
+    </div>
+    <div class="header-right">
+      <span id="data-status" class="data-status">No data loaded</span>
+      <button id="btn-upload-panel" class="btn btn-primary">Upload Data</button>
+      <button id="btn-settings-panel" class="btn btn-secondary">Settings</button>
+    </div>
+  </header>
+
+  <!-- Global Filters -->
+  <section id="filters-bar" class="filters-bar">
+    <div class="filter-group">
+      <label>Quick Filters</label>
+      <div class="quick-filters">
+        <button class="btn btn-sm quick-filter" data-range="ytd">YTD</button>
+        <button class="btn btn-sm quick-filter" data-range="last12">Last 12 Mo</button>
+        <button class="btn btn-sm quick-filter" data-range="last6">Last 6 Mo</button>
+        <button class="btn btn-sm quick-filter" data-range="last3">Last 3 Mo</button>
+        <button class="btn btn-sm quick-filter" data-range="all">All</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label>Date Range</label>
+      <input type="month" id="filter-start-date" />
+      <span>to</span>
+      <input type="month" id="filter-end-date" />
+    </div>
+    <div class="filter-group">
+      <label>Jobsites</label>
+      <div id="filter-jobsites" class="multi-select-container"></div>
+    </div>
+    <div class="filter-group">
+      <label>Vendors</label>
+      <div id="filter-vendors" class="multi-select-container"></div>
+    </div>
+    <div class="filter-group">
+      <label>Transaction Types</label>
+      <div id="filter-types" class="checkbox-group"></div>
+    </div>
+    <button id="btn-apply-filters" class="btn btn-primary">Apply Filters</button>
+    <button id="btn-clear-filters" class="btn btn-ghost">Clear</button>
+  </section>
+
+  <!-- KPI Summary Cards -->
+  <section id="kpi-cards" class="kpi-cards">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Gross Spend</div>
+      <div class="kpi-value" id="kpi-gross-spend">--</div>
+      <div class="kpi-sub">PUR-SUB debits</div>
+    </div>
+    <div class="kpi-card kpi-credit">
+      <div class="kpi-label">Customer Credits</div>
+      <div class="kpi-value" id="kpi-customer-credits">--</div>
+      <div class="kpi-sub">MFG-CUS offsets</div>
+    </div>
+    <div class="kpi-card kpi-credit">
+      <div class="kpi-label">Accounting Adjustments</div>
+      <div class="kpi-value" id="kpi-accounting-adj">--</div>
+      <div class="kpi-sub">MFG-VAR adjustments</div>
+    </div>
+    <div class="kpi-card kpi-net">
+      <div class="kpi-label">Net Cost to PSI</div>
+      <div class="kpi-value" id="kpi-net-cost">--</div>
+      <div class="kpi-sub">After all offsets</div>
+    </div>
+    <div class="kpi-card kpi-info">
+      <div class="kpi-label">Active Jobsites</div>
+      <div class="kpi-value" id="kpi-active-jobsites">--</div>
+      <div class="kpi-sub">Last 90 days</div>
+    </div>
+    <div class="kpi-card kpi-info">
+      <div class="kpi-label">Active Vendors</div>
+      <div class="kpi-value" id="kpi-active-vendors">--</div>
+      <div class="kpi-sub">Last 90 days</div>
+    </div>
+    <div class="kpi-card kpi-info">
+      <div class="kpi-label">Date Range</div>
+      <div class="kpi-value kpi-value-sm" id="kpi-date-range">--</div>
+      <div class="kpi-sub" id="kpi-total-rows">0 transactions</div>
+    </div>
+  </section>
+
+  <!-- Charts Grid -->
+  <section class="charts-grid">
+    <!-- Spend Over Time -->
+    <div class="chart-panel chart-wide">
+      <h2>Spend Over Time</h2>
+      <div class="chart-container">
+        <canvas id="chart-spend-over-time"></canvas>
+      </div>
+    </div>
+
+    <!-- Jobsite Breakdown -->
+    <div class="chart-panel chart-wide">
+      <h2>Jobsite Breakdown <span class="chart-subtitle">(by net spend)</span></h2>
+      <div class="chart-container chart-container-tall">
+        <canvas id="chart-jobsite-breakdown"></canvas>
+      </div>
+    </div>
+
+    <!-- Vendor Analysis -->
+    <div class="chart-panel">
+      <h2>Vendor Share of Spend</h2>
+      <div class="chart-container">
+        <canvas id="chart-vendor-pie"></canvas>
+      </div>
+    </div>
+
+    <!-- Vendor Table -->
+    <div class="chart-panel">
+      <h2>Vendor Details</h2>
+      <div class="table-scroll" id="vendor-table-container"></div>
+    </div>
+
+    <!-- Type Breakdown -->
+    <div class="chart-panel chart-wide">
+      <h2>Transaction Type Breakdown</h2>
+      <div class="chart-container">
+        <canvas id="chart-type-breakdown"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- Data Table -->
+  <section class="data-table-section">
+    <div class="data-table-header">
+      <h2>Transaction Data</h2>
+      <div>
+        <button id="btn-export-csv" class="btn btn-secondary">Export CSV</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table id="data-table" class="data-table">
+        <thead>
+          <tr>
+            <th data-sort="date">Date</th>
+            <th data-sort="baseJob">Jobsite</th>
+            <th data-sort="serviceOrder">Service Order</th>
+            <th data-sort="category">Category</th>
+            <th data-sort="vendorName">Vendor</th>
+            <th data-sort="description">Description</th>
+            <th data-sort="debit" class="num">Debit</th>
+            <th data-sort="credit" class="num">Credit</th>
+            <th data-sort="net" class="num">Net</th>
+            <th>Ref</th>
+          </tr>
+        </thead>
+        <tbody id="data-table-body"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination-controls"></div>
+  </section>
+
+  <!-- Upload Modal -->
+  <div id="upload-modal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Upload Data File</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="upload-dropzone" class="dropzone">
+          <p>Drag & drop an .xlsx file here</p>
+          <p>or</p>
+          <input type="file" id="upload-file-input" accept=".xlsx,.xls" />
+          <label for="upload-file-input" class="btn btn-primary">Choose File</label>
+        </div>
+        <div id="upload-file-name" class="upload-file-name"></div>
+        <div class="upload-options">
+          <label><input type="radio" name="upload-mode" value="append" checked /> Append New Data (skip duplicates)</label>
+          <label><input type="radio" name="upload-mode" value="replace" /> Replace All Data</label>
+        </div>
+        <button id="btn-upload-submit" class="btn btn-primary btn-full" disabled>Upload & Process</button>
+        <div id="upload-progress" class="upload-progress hidden">
+          <div class="spinner"></div>
+          <span>Processing...</span>
+        </div>
+        <div id="upload-result" class="upload-result hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <h3>Upload History</h3>
+        <div id="upload-history"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Tab navigation -->
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="tab-mapping">Jobsite Mapping</button>
+          <button class="settings-tab" data-tab="tab-projections">Projected Costs</button>
+        </div>
+
+        <!-- Jobsite Mapping Tab -->
+        <div id="tab-mapping" class="settings-tab-content active">
+          <p class="settings-desc">Map base job numbers to human-readable site names. Changes save automatically.</p>
+          <div class="settings-toolbar">
+            <input type="text" id="settings-search" class="mapping-input" placeholder="Search job number or site name..." />
+            <button id="btn-add-mapping" class="btn btn-secondary btn-sm">+ Add New</button>
+            <span id="settings-save-status" class="save-status"></span>
+          </div>
+          <table class="settings-table">
+            <thead>
+              <tr>
+                <th style="width:110px">Job Number</th>
+                <th>Site Name</th>
+                <th style="width:70px">Status</th>
+              </tr>
+            </thead>
+            <tbody id="settings-mapping-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Projected Costs Tab -->
+        <div id="tab-projections" class="settings-tab-content">
+          <p class="settings-desc">Add projected sub-contract line items. Each entry shows as a red dashed line (summed by month) on the Spend Over Time chart and is flagged in red across all views.</p>
+
+          <!-- Add new projection form -->
+          <div class="projection-form">
+            <div class="proj-form-row">
+              <div class="proj-field">
+                <label>Month</label>
+                <input type="month" id="proj-month" />
+              </div>
+              <div class="proj-field">
+                <label>Jobsite</label>
+                <select id="proj-jobsite"></select>
+              </div>
+              <div class="proj-field">
+                <label>Vendor</label>
+                <select id="proj-vendor">
+                  <option value="">-- Select --</option>
+                </select>
+              </div>
+            </div>
+            <div class="proj-form-row">
+              <div class="proj-field">
+                <label>Description</label>
+                <input type="text" id="proj-description" class="mapping-input" placeholder="e.g., Estimated install labor" />
+              </div>
+              <div class="proj-field" style="max-width:150px">
+                <label>Amount ($)</label>
+                <input type="number" id="proj-amount" class="mapping-input" step="100" min="0" placeholder="0" />
+              </div>
+              <div class="proj-field" style="max-width:130px">
+                <label>Type</label>
+                <select id="proj-type" class="mapping-input">
+                  <option value="PUR-SUB">PUR-SUB</option>
+                  <option value="STK-MTL">STK-MTL</option>
+                </select>
+              </div>
+              <div class="proj-field" style="max-width:100px;align-self:flex-end">
+                <button id="btn-add-projection" class="btn btn-primary btn-sm btn-full">Add</button>
+              </div>
+            </div>
+          </div>
+
+          <span id="projection-save-status" class="save-status"></span>
+
+          <!-- Projections table -->
+          <div class="table-scroll" style="max-height:350px">
+            <table class="data-table compact">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Jobsite</th>
+                  <th>Vendor</th>
+                  <th>Description</th>
+                  <th>Type</th>
+                  <th class="num">Amount</th>
+                  <th style="width:50px"></th>
+                </tr>
+              </thead>
+              <tbody id="projections-body"></tbody>
+            </table>
+          </div>
+          <div id="projections-empty" class="empty-state" style="padding:20px">No projected costs yet. Use the form above to add line items.</div>
+          <div id="projections-total" class="projections-total"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="src/utils/formatters.js"></script>
+  <script src="src/charts/chartConfig.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
