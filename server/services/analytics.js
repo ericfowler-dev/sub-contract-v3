@@ -1,5 +1,5 @@
-function computeSummary(transactions, jobsiteMapping) {
-  if (!transactions.length) {
+function computeSummary(transactions, jobsiteMapping, projections = []) {
+  if (!transactions.length && !projections.length) {
     return {
       totalGrossSpend: 0,
       totalCustomerCredits: 0,
@@ -19,7 +19,8 @@ function computeSummary(transactions, jobsiteMapping) {
   const totalGrossSpend = sum(purSub, 'debit');
   const totalCustomerCredits = Math.abs(sum(mfgCus, 'net'));
   const totalAccountingAdj = Math.abs(sum(mfgVar, 'net'));
-  const netCostToPSI = sum(transactions, 'net');
+  const totalProjectedCost = sum(projections, 'amount');
+  const netCostToPSI = sum(transactions, 'net') + totalProjectedCost;
 
   // Active in last 90 days
   const now = new Date();
@@ -29,6 +30,8 @@ function computeSummary(transactions, jobsiteMapping) {
   const activeVendors = new Set(recent.filter(t => t.vendorName !== 'Internal / Non-Vendor').map(t => t.vendorName)).size;
 
   const dates = transactions.map(t => t.date).filter(Boolean).sort();
+  const projectionDates = projections.filter(p => p.month).map(p => `${p.month}-01`).sort();
+  const allDates = [...dates, ...projectionDates].sort();
 
   return {
     totalGrossSpend: round2(totalGrossSpend),
@@ -37,7 +40,7 @@ function computeSummary(transactions, jobsiteMapping) {
     netCostToPSI: round2(netCostToPSI),
     activeJobsites,
     activeVendors,
-    dateRange: { start: dates[0], end: dates[dates.length - 1] },
+    dateRange: { start: allDates[0] || null, end: allDates[allDates.length - 1] || null },
     totalRows: transactions.length,
   };
 }
@@ -191,6 +194,30 @@ function applyFilters(transactions, filters) {
   return result;
 }
 
+function applyProjectionFilters(projections, filters) {
+  let result = Array.isArray(projections) ? projections : [];
+
+  if (filters.startDate) {
+    const startMonth = filters.startDate.slice(0, 7);
+    result = result.filter(p => (p.month || '') >= startMonth);
+  }
+  if (filters.endDate) {
+    const endMonth = filters.endDate.slice(0, 7);
+    result = result.filter(p => (p.month || '') <= endMonth);
+  }
+  if (filters.jobsites && filters.jobsites.length) {
+    result = result.filter(p => filters.jobsites.includes(p.baseJob));
+  }
+  if (filters.vendors && filters.vendors.length) {
+    result = result.filter(p => filters.vendors.includes(p.vendorName));
+  }
+  if (filters.types && filters.types.length) {
+    result = result.filter(p => filters.types.includes(p.type));
+  }
+
+  return result;
+}
+
 function sum(arr, field) {
   return arr.reduce((s, t) => s + (t[field] || 0), 0);
 }
@@ -206,4 +233,5 @@ module.exports = {
   computeVendorAnalysis,
   computeTypeBreakdown,
   applyFilters,
+  applyProjectionFilters,
 };

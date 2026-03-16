@@ -587,7 +587,11 @@ const App = {
   },
 
   escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   },
 
   addNewMapping() {
@@ -670,9 +674,11 @@ const App = {
       tbody.innerHTML = sorted.map(p => `
         <tr class="row-projected">
           <td>${Fmt.monthLabel(p.month)}</td>
-          <td>${this.jobsiteMapping[p.baseJob] || p.baseJob || '--'}</td>
-          <td>${Fmt.truncate(p.vendorName || '--', 25)}</td>
-          <td>${Fmt.truncate(p.description || '--', 30)}</td>
+          <td>${this.escapeHtml(this.jobsiteMapping[p.baseJob] || p.baseJob || '--')}</td>
+          <td title="${this.escapeHtml(p.vendorName || '--')}">${this.escapeHtml(Fmt.truncate(p.vendorName || '--', 25))}</td>
+          <td class="projection-description-cell" title="${this.escapeHtml(p.description || '--')}">${this.escapeHtml(p.descriptionDisplay || p.description || '--')}</td>
+          <td class="projection-ref-cell">${this.escapeHtml(p.invoiceNumber || '--')}</td>
+          <td class="projection-ref-cell">${this.escapeHtml(p.poNumber || '--')}</td>
           <td><span class="badge badge-projected">${p.type || 'PUR-SUB'}</span></td>
           <td class="num">${Fmt.currency(p.amount)}</td>
           <td style="text-align:center"><button class="btn btn-sm btn-ghost projection-remove" data-id="${p.id}">X</button></td>
@@ -710,40 +716,52 @@ const App = {
     const vendorSelect = document.getElementById('proj-vendor');
 
     // Jobsites
-    if (jobSelect && !jobSelect.dataset.populated) {
+    if (jobSelect) {
+      const currentJob = jobSelect.value;
       jobSelect.innerHTML = '<option value="">-- Select Jobsite --</option>';
       const entries = Object.entries(this.jobsiteMapping).sort((a, b) => a[1].localeCompare(b[1]));
       for (const [job, name] of entries) {
         jobSelect.innerHTML += `<option value="${job}">${name} (${job})</option>`;
       }
-      jobSelect.dataset.populated = '1';
+      if ([...jobSelect.options].some(opt => opt.value === currentJob)) {
+        jobSelect.value = currentJob;
+      }
     }
 
     // Vendors from filter options
-    if (vendorSelect && !vendorSelect.dataset.populated && this.filterOptions) {
+    if (vendorSelect && this.filterOptions) {
+      const currentVendor = vendorSelect.value;
       vendorSelect.innerHTML = '<option value="">-- Select Vendor --</option>';
       for (const v of this.filterOptions.vendors) {
         if (v.value === 'Internal / Non-Vendor') continue;
         vendorSelect.innerHTML += `<option value="${v.value}">${v.label}</option>`;
       }
+      if (currentVendor && currentVendor !== '__custom__' && ![...vendorSelect.options].some(opt => opt.value === currentVendor)) {
+        vendorSelect.innerHTML += `<option value="${this.escapeHtml(currentVendor)}">${this.escapeHtml(currentVendor)}</option>`;
+      }
       // Allow custom entry
       vendorSelect.innerHTML += '<option value="__custom__">Other (type name)...</option>';
-      vendorSelect.dataset.populated = '1';
+      if ([...vendorSelect.options].some(opt => opt.value === currentVendor)) {
+        vendorSelect.value = currentVendor;
+      }
 
-      vendorSelect.addEventListener('change', () => {
-        if (vendorSelect.value === '__custom__') {
-          const custom = prompt('Enter vendor name:');
-          if (custom) {
-            const opt = document.createElement('option');
-            opt.value = custom;
-            opt.textContent = custom;
-            vendorSelect.insertBefore(opt, vendorSelect.lastElementChild);
-            vendorSelect.value = custom;
-          } else {
-            vendorSelect.value = '';
+      if (!vendorSelect.dataset.bound) {
+        vendorSelect.dataset.bound = '1';
+        vendorSelect.addEventListener('change', () => {
+          if (vendorSelect.value === '__custom__') {
+            const custom = prompt('Enter vendor name:');
+            if (custom) {
+              const opt = document.createElement('option');
+              opt.value = custom;
+              opt.textContent = custom;
+              vendorSelect.insertBefore(opt, vendorSelect.lastElementChild);
+              vendorSelect.value = custom;
+            } else {
+              vendorSelect.value = '';
+            }
           }
-        }
-      });
+        });
+      }
     }
   },
 
@@ -751,7 +769,9 @@ const App = {
     const month = document.getElementById('proj-month').value;
     const baseJob = document.getElementById('proj-jobsite').value;
     const vendorName = document.getElementById('proj-vendor').value === '__custom__' ? '' : document.getElementById('proj-vendor').value;
-    const description = document.getElementById('proj-description').value;
+    const description = document.getElementById('proj-description').value.trim();
+    const invoiceNumber = document.getElementById('proj-invoice').value.trim();
+    const poNumber = document.getElementById('proj-po').value.trim();
     const amount = parseFloat(document.getElementById('proj-amount').value);
     const type = document.getElementById('proj-type').value;
 
@@ -766,22 +786,27 @@ const App = {
       const res = await fetch('/api/projections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, baseJob, vendorName, description, amount, type }),
+        body: JSON.stringify({ month, baseJob, vendorName, description, invoiceNumber, poNumber, amount, type }),
       });
       const data = await res.json();
-      if (data.success) {
-        statusEl.textContent = 'Added';
-        statusEl.className = 'save-status saved';
-        setTimeout(() => { statusEl.textContent = ''; }, 2000);
-        // Clear form fields (keep month and jobsite for quick re-entry)
-        document.getElementById('proj-description').value = '';
-        document.getElementById('proj-amount').value = '';
-        // Refresh
-        this.renderProjections();
-        const spendTime = await this.api('spend-over-time');
-        this.renderSpendOverTime(spendTime);
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to add projected cost.');
       }
+
+      statusEl.textContent = 'Added';
+      statusEl.className = 'save-status saved';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      // Clear form fields (keep month and jobsite for quick re-entry)
+      document.getElementById('proj-description').value = '';
+      document.getElementById('proj-invoice').value = '';
+      document.getElementById('proj-po').value = '';
+      document.getElementById('proj-amount').value = '';
+      // Refresh
+      this.renderProjections();
+      const spendTime = await this.api('spend-over-time');
+      this.renderSpendOverTime(spendTime);
     } catch (err) {
+      console.error('Failed to add projection:', err);
       statusEl.textContent = 'Error';
       statusEl.className = 'save-status error';
     }

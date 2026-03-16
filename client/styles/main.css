@@ -441,6 +441,7 @@ body {
   gap: 12px;
   margin-bottom: 10px;
   align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .proj-form-row:last-child { margin-bottom: 0; }
@@ -450,6 +451,7 @@ body {
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  min-width: 160px;
 }
 
 .proj-field label {
@@ -461,6 +463,8 @@ body {
 }
 
 .proj-field select,
+.proj-field textarea,
+.proj-field input[type="text"],
 .proj-field input[type="month"],
 .proj-field input[type="number"] {
   padding: 6px 10px;
@@ -469,6 +473,40 @@ body {
   font-size: 13px;
   font-family: inherit;
   color: var(--text);
+}
+
+.proj-field textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.proj-form-row-details {
+  align-items: stretch;
+}
+
+.proj-field-description {
+  flex: 2 1 360px;
+}
+
+.proj-field-ref,
+.proj-field-compact {
+  flex: 0 1 170px;
+}
+
+.proj-field-action {
+  flex: 0 0 100px;
+  align-self: flex-end;
+}
+
+.projection-description-cell {
+  min-width: 280px;
+  white-space: pre-line;
+  line-height: 1.4;
+}
+
+.projection-ref-cell {
+  min-width: 110px;
+  white-space: nowrap;
 }
 
 .projections-total {
@@ -529,6 +567,7 @@ body {
 }
 
 .modal-wide { max-width: 740px; }
+.modal-settings { max-width: 1100px; }
 
 .modal-header {
   display: flex;
@@ -772,4 +811,11 @@ body {
   .filters-bar { flex-direction: column; }
   .kpi-cards { grid-template-columns: repeat(2, 1fr); }
   .kpi-value { font-size: 20px; }
+  .proj-field,
+  .proj-field-description,
+  .proj-field-ref,
+  .proj-field-compact,
+  .proj-field-action {
+    flex: 1 1 100%;
+  }
 }

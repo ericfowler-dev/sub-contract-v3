@@ -7,6 +7,7 @@ const {
   computeVendorAnalysis,
   computeTypeBreakdown,
   applyFilters,
+  applyProjectionFilters,
 } = require('../services/analytics');
 
 const router = express.Router();
@@ -22,19 +23,81 @@ function getFilters(query) {
   };
 }
 
+function cleanText(value) {
+  return String(value ?? '').trim();
+}
+
+function extractProjectionReferences(description) {
+  const source = cleanText(description);
+  const invoiceMatch = source.match(/\b(?:inv(?:oice)?\.?\s*#?\s*:?\s*)([A-Za-z0-9-]+)/i);
+  const poMatch = source.match(/\b(?:po\.?\s*#?\s*:?\s*)([A-Za-z0-9-]+)/i);
+
+  let descriptionDisplay = source;
+  if (invoiceMatch) descriptionDisplay = descriptionDisplay.replace(invoiceMatch[0], ' ');
+  if (poMatch) descriptionDisplay = descriptionDisplay.replace(poMatch[0], ' ');
+
+  descriptionDisplay = descriptionDisplay
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,;])/g, '$1')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s*[-:;,]+\s*$/g, '')
+    .trim();
+
+  return {
+    invoiceNumber: invoiceMatch?.[1] || '',
+    poNumber: poMatch?.[1] || '',
+    descriptionDisplay,
+  };
+}
+
+function normalizeProjection(projection) {
+  const description = cleanText(projection.description);
+  const derivedRefs = extractProjectionReferences(description);
+
+  return {
+    ...projection,
+    description,
+    descriptionDisplay: derivedRefs.descriptionDisplay || description,
+    invoiceNumber: cleanText(projection.invoiceNumber || projection.invoice) || derivedRefs.invoiceNumber,
+    poNumber: cleanText(projection.poNumber || projection.po) || derivedRefs.poNumber,
+  };
+}
+
+function sanitizeProjectionInput(input = {}) {
+  const sanitized = {};
+
+  if (Object.prototype.hasOwnProperty.call(input, 'month')) sanitized.month = cleanText(input.month);
+  if (Object.prototype.hasOwnProperty.call(input, 'baseJob')) sanitized.baseJob = cleanText(input.baseJob);
+  if (Object.prototype.hasOwnProperty.call(input, 'vendorName')) sanitized.vendorName = cleanText(input.vendorName);
+  if (Object.prototype.hasOwnProperty.call(input, 'description')) sanitized.description = cleanText(input.description);
+  if (Object.prototype.hasOwnProperty.call(input, 'invoiceNumber') || Object.prototype.hasOwnProperty.call(input, 'invoice')) {
+    sanitized.invoiceNumber = cleanText(input.invoiceNumber ?? input.invoice);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'poNumber') || Object.prototype.hasOwnProperty.call(input, 'po')) {
+    sanitized.poNumber = cleanText(input.poNumber ?? input.po);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'amount')) sanitized.amount = Number(input.amount) || 0;
+  if (Object.prototype.hasOwnProperty.call(input, 'type')) sanitized.type = cleanText(input.type) || 'PUR-SUB';
+
+  return sanitized;
+}
+
 // GET /api/summary
 router.get('/summary', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
-  const filtered = applyFilters(db.transactions, getFilters(req.query));
-  res.json(computeSummary(filtered, db.jobsiteMapping));
+  const filters = getFilters(req.query);
+  const filtered = applyFilters(db.transactions, filters);
+  const projections = applyProjectionFilters(db.projections || [], filters);
+  res.json(computeSummary(filtered, db.jobsiteMapping, projections));
 });
 
 // GET /api/spend-over-time
 router.get('/spend-over-time', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
-  const filtered = applyFilters(db.transactions, getFilters(req.query));
+  const filters = getFilters(req.query);
+  const filtered = applyFilters(db.transactions, filters);
   const actuals = computeSpendOverTime(filtered);
-  const projections = Array.isArray(db.projections) ? db.projections : [];
+  const projections = applyProjectionFilters(db.projections || [], filters);
 
   // Aggregate projected line items by month
   const projByMonth = {};
@@ -58,6 +121,7 @@ router.get('/spend-over-time', (req, res) => {
     return {
       ...actual,
       projected: projByMonth[month] || null,
+      net: Math.round((actual.net + (projByMonth[month] || 0)) * 100) / 100,
     };
   });
 
@@ -166,29 +230,38 @@ router.put('/jobsite-mapping', (req, res) => {
 // GET /api/projections
 router.get('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
-  res.json(db.projections || []);
+  res.json((db.projections || []).map(normalizeProjection));
 });
 
 // POST /api/projections - add a new projected line item
 router.post('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   if (!Array.isArray(db.projections)) db.projections = [];
-  const p = req.body;
+  const p = sanitizeProjectionInput(req.body);
+  if (!/^\d{4}-\d{2}$/.test(p.month || '')) {
+    return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
+  }
+  if (!(p.amount > 0)) {
+    return res.status(400).json({ error: 'Amount must be greater than zero.' });
+  }
+  const [year, monthNum] = p.month.split('-').map(Number);
   const item = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     month: p.month,
-    year: p.year || parseInt(p.month?.split('-')[0]),
-    monthNum: p.monthNum || parseInt(p.month?.split('-')[1]),
+    year,
+    monthNum,
     baseJob: p.baseJob || '',
     vendorName: p.vendorName || '',
     description: p.description || '',
+    invoiceNumber: p.invoiceNumber || '',
+    poNumber: p.poNumber || '',
     amount: Number(p.amount) || 0,
     type: p.type || 'PUR-SUB',
     createdAt: new Date().toISOString(),
   };
   db.projections.push(item);
   saveDb(req.app.locals.dataDir, db);
-  res.json({ success: true, projection: item, total: db.projections.length });
+  res.json({ success: true, projection: normalizeProjection(item), total: db.projections.length });
 });
 
 // PUT /api/projections/:id - update a projected line item
@@ -197,7 +270,7 @@ router.put('/projections/:id', (req, res) => {
   if (!Array.isArray(db.projections)) db.projections = [];
   const idx = db.projections.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Projection not found' });
-  const updates = req.body;
+  const updates = sanitizeProjectionInput(req.body);
   Object.assign(db.projections[idx], updates);
   // Recalculate year/monthNum if month changed
   if (updates.month) {
@@ -205,7 +278,7 @@ router.put('/projections/:id', (req, res) => {
     db.projections[idx].monthNum = parseInt(updates.month.split('-')[1]);
   }
   saveDb(req.app.locals.dataDir, db);
-  res.json({ success: true, projection: db.projections[idx] });
+  res.json({ success: true, projection: normalizeProjection(db.projections[idx]) });
 });
 
 // DELETE /api/projections/:id

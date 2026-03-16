@@ -201,7 +201,7 @@
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-overlay"></div>
-    <div class="modal-content modal-wide">
+    <div class="modal-content modal-wide modal-settings">
       <div class="modal-header">
         <h2>Settings</h2>
         <button class="modal-close">&times;</button>
@@ -255,23 +255,33 @@
                 </select>
               </div>
             </div>
-            <div class="proj-form-row">
-              <div class="proj-field">
-                <label>Description</label>
-                <input type="text" id="proj-description" class="mapping-input" placeholder="e.g., Estimated install labor" />
+            <div class="proj-form-row proj-form-row-details">
+              <div class="proj-field proj-field-description">
+                <label>Description / Scope</label>
+                <textarea id="proj-description" class="mapping-input" rows="3" placeholder="e.g., Estimated install labor for week of 3/16"></textarea>
               </div>
-              <div class="proj-field" style="max-width:150px">
+              <div class="proj-field proj-field-ref">
+                <label>Invoice</label>
+                <input type="text" id="proj-invoice" class="mapping-input" placeholder="e.g., 208421-9" />
+              </div>
+              <div class="proj-field proj-field-ref">
+                <label>PO</label>
+                <input type="text" id="proj-po" class="mapping-input" placeholder="e.g., 69383" />
+              </div>
+            </div>
+            <div class="proj-form-row">
+              <div class="proj-field proj-field-compact">
                 <label>Amount ($)</label>
                 <input type="number" id="proj-amount" class="mapping-input" step="100" min="0" placeholder="0" />
               </div>
-              <div class="proj-field" style="max-width:130px">
+              <div class="proj-field proj-field-compact">
                 <label>Type</label>
                 <select id="proj-type" class="mapping-input">
                   <option value="PUR-SUB">PUR-SUB</option>
                   <option value="STK-MTL">STK-MTL</option>
                 </select>
               </div>
-              <div class="proj-field" style="max-width:100px;align-self:flex-end">
+              <div class="proj-field proj-field-action">
                 <button id="btn-add-projection" class="btn btn-primary btn-sm btn-full">Add</button>
               </div>
             </div>
@@ -288,6 +298,8 @@
                   <th>Jobsite</th>
                   <th>Vendor</th>
                   <th>Description</th>
+                  <th>Invoice</th>
+                  <th>PO</th>
                   <th>Type</th>
                   <th class="num">Amount</th>
                   <th style="width:50px"></th>
