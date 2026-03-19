@@ -449,6 +449,31 @@ const App = {
     this.updateRockExclusionButton();
   },
 
+  getFiltersFromControls() {
+    if (!this.filterOptions) return { ...this.filters };
+
+    const startDate = document.getElementById('filter-start-date')?.value || '';
+    const endDate = document.getElementById('filter-end-date')?.value || '';
+    const selectedJobsites = [...document.querySelectorAll('.ms-item[data-prefix="jobsite"]:checked')].map(cb => cb.value);
+    const selectedVendors = [...document.querySelectorAll('.ms-item[data-prefix="vendor"]:checked')].map(cb => cb.value);
+    const selectedTypes = [...document.querySelectorAll('#filter-types input:checked')].map(cb => cb.value);
+
+    const allJobsites = document.querySelectorAll('.ms-item[data-prefix="jobsite"]').length;
+    const allVendors = document.querySelectorAll('.ms-item[data-prefix="vendor"]').length;
+    const allTypes = document.querySelectorAll('#filter-types input').length;
+    const defaultStart = this.filterOptions.dateRange.min?.substring(0, 7) || '';
+    const defaultEnd = this.filterOptions.dateRange.max?.substring(0, 7) || '';
+
+    return {
+      startDate: startDate && startDate !== defaultStart ? startDate : null,
+      endDate: endDate && endDate !== defaultEnd ? endDate : null,
+      jobsites: selectedJobsites.length && selectedJobsites.length < allJobsites ? selectedJobsites : null,
+      vendors: selectedVendors.length && selectedVendors.length < allVendors ? selectedVendors : null,
+      types: selectedTypes.length && selectedTypes.length < allTypes ? selectedTypes : null,
+      excludeRock: document.getElementById('btn-exclude-rock')?.classList.contains('active') || false,
+    };
+  },
+
   applyQuickFilter(range) {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -498,29 +523,7 @@ const App = {
   },
 
   applyFilters() {
-    const startDate = document.getElementById('filter-start-date').value;
-    const endDate = document.getElementById('filter-end-date').value;
-
-    const selectedJobsites = [...document.querySelectorAll('.ms-item[data-prefix="jobsite"]:checked')].map(cb => cb.value);
-    const selectedVendors = [...document.querySelectorAll('.ms-item[data-prefix="vendor"]:checked')].map(cb => cb.value);
-    const selectedTypes = [...document.querySelectorAll('#filter-types input:checked')].map(cb => cb.value);
-
-    // Only set filters if not "all" selected
-    const allJobsites = document.querySelectorAll('.ms-item[data-prefix="jobsite"]').length;
-    const allVendors = document.querySelectorAll('.ms-item[data-prefix="vendor"]').length;
-    const allTypes = document.querySelectorAll('#filter-types input').length;
-    const defaultStart = this.filterOptions?.dateRange.min?.substring(0, 7) || '';
-    const defaultEnd = this.filterOptions?.dateRange.max?.substring(0, 7) || '';
-
-    this.filters = {
-      startDate: startDate && startDate !== defaultStart ? startDate : null,
-      endDate: endDate && endDate !== defaultEnd ? endDate : null,
-      jobsites: selectedJobsites.length && selectedJobsites.length < allJobsites ? selectedJobsites : null,
-      vendors: selectedVendors.length && selectedVendors.length < allVendors ? selectedVendors : null,
-      types: selectedTypes.length && selectedTypes.length < allTypes ? selectedTypes : null,
-      excludeRock: document.getElementById('btn-exclude-rock').classList.contains('active'),
-    };
-
+    this.filters = this.getFiltersFromControls();
     this.currentPage = 1;
     this.syncFiltersToUrl();
     this.refresh();
@@ -1008,9 +1011,22 @@ const App = {
   },
 
   async copyShareLink() {
-    this.syncFiltersToUrl();
-    const shareUrl = window.location.href;
+    const button = document.getElementById('btn-share-view');
+    const originalLabel = button?.textContent || 'Share View';
+    let copied = false;
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Preparing...';
+    }
+
     try {
+      this.filters = this.getFiltersFromControls();
+      this.currentPage = 1;
+      this.syncFiltersToUrl();
+      await this.refresh();
+
+      const shareUrl = window.location.href;
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareUrl);
       } else {
@@ -1021,10 +1037,17 @@ const App = {
         document.execCommand('copy');
         document.body.removeChild(tempInput);
       }
+      copied = true;
+      if (button) button.disabled = false;
       this.flashButtonLabel('btn-share-view', 'Copied');
     } catch (err) {
       console.error('Unable to copy share link:', err);
-      alert(`Copy failed. Share this link manually:\n\n${shareUrl}`);
+      alert(`Copy failed. Share this link manually:\n\n${window.location.href}`);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        if (!copied) button.textContent = originalLabel;
+      }
     }
   },
 
