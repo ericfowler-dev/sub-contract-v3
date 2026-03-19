@@ -15,6 +15,7 @@
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
+      <button id="btn-share-view" class="btn btn-secondary">Share View</button>
       <button id="btn-upload-panel" class="btn btn-primary">Upload Data</button>
       <button id="btn-settings-panel" class="btn btn-secondary">Settings</button>
     </div>
@@ -32,15 +33,21 @@
         <button class="btn btn-sm quick-filter" data-range="all">All</button>
       </div>
     </div>
-    <div class="filter-group">
+    <div class="filter-group filter-group-date-range">
       <label>Date Range</label>
-      <input type="month" id="filter-start-date" />
-      <span>to</span>
-      <input type="month" id="filter-end-date" />
+      <div class="date-range-inputs">
+        <input type="month" id="filter-start-date" />
+        <span>to</span>
+        <input type="month" id="filter-end-date" />
+      </div>
     </div>
     <div class="filter-group">
       <label>Jobsites</label>
       <div id="filter-jobsites" class="multi-select-container"></div>
+    </div>
+    <div class="filter-group filter-group-emphasis">
+      <label>Vendor Exclusion</label>
+      <button id="btn-exclude-rock" class="btn btn-exclude-rock">EXCLUDE PDX EXHAUST STACK RUST</button>
     </div>
     <div class="filter-group">
       <label>Vendors</label>
@@ -138,7 +145,9 @@
   <section class="data-table-section">
     <div class="data-table-header">
       <h2>Transaction Data</h2>
-      <div>
+      <div class="table-actions">
+        <button id="btn-print-report" class="btn btn-secondary">Print / PDF</button>
+        <button id="btn-export-jpeg" class="btn btn-secondary">Export JPEG</button>
         <button id="btn-export-csv" class="btn btn-secondary">Export CSV</button>
       </div>
     </div>
@@ -315,8 +324,11 @@
     </div>
   </div>
 
+  <div id="report-capture-root" class="hidden"></div>
+
   <script src="src/utils/formatters.js"></script>
   <script src="src/charts/chartConfig.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="src/app.js"></script>
 </body>
 </html>

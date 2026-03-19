@@ -1,4 +1,6 @@
 // PSI Sub-Contract Dashboard - Main App
+const ROCK_ENTERPRISES_VENDOR = 'Rock Enterprises';
+
 const App = {
   charts: {},
   filters: {},
@@ -7,11 +9,15 @@ const App = {
   currentPage: 1,
   jobsiteMapping: {},
   projections: {},
+  uploadState: { selectedFile: null },
+  reportRoot: null,
 
   async init() {
     this.bindEvents();
     await this.loadFilterOptions();
     await this.loadJobsiteMapping();
+    this.hydrateFiltersFromUrl();
+    this.applyFilterStateToControls();
     await this.refresh();
     await this.loadMetadata();
   },
@@ -20,6 +26,8 @@ const App = {
     // Filter controls
     document.getElementById('btn-apply-filters').addEventListener('click', () => this.applyFilters());
     document.getElementById('btn-clear-filters').addEventListener('click', () => this.clearFilters());
+    document.getElementById('btn-exclude-rock').addEventListener('click', () => this.toggleRockExclusion());
+    document.getElementById('btn-share-view').addEventListener('click', () => this.copyShareLink());
 
     // Quick date range filters (YTD, Last 12 Mo, etc.)
     document.querySelectorAll('.quick-filter').forEach(btn => {
@@ -27,7 +35,10 @@ const App = {
     });
 
     // Modal toggles
-    document.getElementById('btn-upload-panel').addEventListener('click', () => this.showModal('upload-modal'));
+    document.getElementById('btn-upload-panel').addEventListener('click', () => {
+      this.resetUploadModalState();
+      this.showModal('upload-modal');
+    });
     document.getElementById('btn-settings-panel').addEventListener('click', () => {
       this.showModal('settings-modal');
       this.renderSettingsMapping();
@@ -47,7 +58,8 @@ const App = {
     // Close modals
     document.querySelectorAll('.modal-close, .modal-overlay').forEach(el => {
       el.addEventListener('click', (e) => {
-        e.target.closest('.modal').classList.add('hidden');
+        const modal = e.target.closest('.modal');
+        if (modal) this.hideModal(modal.id);
       });
     });
 
@@ -70,6 +82,8 @@ const App = {
 
     // Export
     document.getElementById('btn-export-csv').addEventListener('click', () => this.exportCSV());
+    document.getElementById('btn-print-report').addEventListener('click', () => this.printReport());
+    document.getElementById('btn-export-jpeg').addEventListener('click', () => this.exportJPEG());
   },
 
   // -- API Helpers --
@@ -85,7 +99,43 @@ const App = {
     if (this.filters.jobsites?.length) params.set('jobsites', this.filters.jobsites.join(','));
     if (this.filters.vendors?.length) params.set('vendors', this.filters.vendors.join(','));
     if (this.filters.types?.length) params.set('types', this.filters.types.join(','));
+    if (this.filters.excludeRock) params.set('excludeVendors', ROCK_ENTERPRISES_VENDOR);
     return params.toString();
+  },
+
+  normalizeMonthValue(value) {
+    return /^\d{4}-\d{2}$/.test(value || '') ? value : null;
+  },
+
+  hydrateFiltersFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const parseList = (key) => {
+      const value = params.get(key);
+      return value ? value.split(',').filter(Boolean) : null;
+    };
+
+    this.filters = {
+      startDate: this.normalizeMonthValue(params.get('start')),
+      endDate: this.normalizeMonthValue(params.get('end')),
+      jobsites: parseList('jobsites'),
+      vendors: parseList('vendors'),
+      types: parseList('types'),
+      excludeRock: params.get('excludeRock') === '1',
+    };
+  },
+
+  syncFiltersToUrl() {
+    const params = new URLSearchParams();
+    if (this.filters.startDate) params.set('start', this.filters.startDate);
+    if (this.filters.endDate) params.set('end', this.filters.endDate);
+    if (this.filters.jobsites?.length) params.set('jobsites', this.filters.jobsites.join(','));
+    if (this.filters.vendors?.length) params.set('vendors', this.filters.vendors.join(','));
+    if (this.filters.types?.length) params.set('types', this.filters.types.join(','));
+    if (this.filters.excludeRock) params.set('excludeRock', '1');
+
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+    window.history.replaceState({}, '', nextUrl);
   },
 
   async api(endpoint) {
@@ -314,6 +364,12 @@ const App = {
     typeDiv.innerHTML = opts.types.map(t =>
       `<label class="type-checkbox"><input type="checkbox" value="${t}" checked />${t}</label>`
     ).join('');
+
+    document.querySelectorAll('.ms-item, .ms-all').forEach(input => {
+      input.addEventListener('change', () => this.updateMultiSelectControl(input.dataset.prefix));
+    });
+
+    this.applyFilterStateToControls();
   },
 
   createMultiSelect(options, prefix) {
@@ -333,6 +389,59 @@ const App = {
     const prefix = checkbox.dataset.prefix;
     const items = document.querySelectorAll(`.ms-item[data-prefix="${prefix}"]`);
     items.forEach(cb => { cb.checked = checkbox.checked; });
+    this.updateMultiSelectControl(prefix);
+  },
+
+  updateMultiSelectControl(prefix) {
+    const items = [...document.querySelectorAll(`.ms-item[data-prefix="${prefix}"]`)];
+    const selectAll = document.querySelector(`.ms-all[data-prefix="${prefix}"]`);
+    if (!items.length || !selectAll) return;
+
+    const selectedCount = items.filter(cb => cb.checked).length;
+    selectAll.checked = selectedCount === items.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
+
+    const button = selectAll.closest('.multi-select')?.querySelector('.multi-select-btn');
+    if (button) {
+      button.textContent = selectedCount === items.length ? `All (${items.length})` : `${selectedCount} selected`;
+    }
+  },
+
+  setMultiSelectSelections(prefix, values) {
+    const selectedValues = values?.length ? new Set(values) : null;
+    document.querySelectorAll(`.ms-item[data-prefix="${prefix}"]`).forEach(cb => {
+      cb.checked = !selectedValues || selectedValues.has(cb.value);
+    });
+    this.updateMultiSelectControl(prefix);
+  },
+
+  updateRockExclusionButton() {
+    const button = document.getElementById('btn-exclude-rock');
+    if (!button) return;
+    button.classList.toggle('active', Boolean(this.filters.excludeRock));
+    button.setAttribute('aria-pressed', this.filters.excludeRock ? 'true' : 'false');
+  },
+
+  applyFilterStateToControls() {
+    if (!this.filterOptions) return;
+
+    const startInput = document.getElementById('filter-start-date');
+    const endInput = document.getElementById('filter-end-date');
+    const defaultStart = this.filterOptions.dateRange.min?.substring(0, 7) || '';
+    const defaultEnd = this.filterOptions.dateRange.max?.substring(0, 7) || '';
+
+    if (startInput) startInput.value = this.filters.startDate || defaultStart;
+    if (endInput) endInput.value = this.filters.endDate || defaultEnd;
+
+    this.setMultiSelectSelections('jobsite', this.filters.jobsites);
+    this.setMultiSelectSelections('vendor', this.filters.vendors);
+
+    const selectedTypes = this.filters.types?.length ? new Set(this.filters.types) : null;
+    document.querySelectorAll('#filter-types input').forEach(cb => {
+      cb.checked = !selectedTypes || selectedTypes.has(cb.value);
+    });
+
+    this.updateRockExclusionButton();
   },
 
   applyQuickFilter(range) {
@@ -373,6 +482,7 @@ const App = {
         document.getElementById('filter-end-date').value = this.filterOptions.dateRange.max?.substring(0, 7) || '';
       }
       this.currentPage = 1;
+      this.syncFiltersToUrl();
       this.refresh();
       return;
     }
@@ -394,38 +504,42 @@ const App = {
     const allJobsites = document.querySelectorAll('.ms-item[data-prefix="jobsite"]').length;
     const allVendors = document.querySelectorAll('.ms-item[data-prefix="vendor"]').length;
     const allTypes = document.querySelectorAll('#filter-types input').length;
+    const defaultStart = this.filterOptions?.dateRange.min?.substring(0, 7) || '';
+    const defaultEnd = this.filterOptions?.dateRange.max?.substring(0, 7) || '';
 
     this.filters = {
-      startDate: startDate || null,
-      endDate: endDate || null,
-      jobsites: selectedJobsites.length < allJobsites ? selectedJobsites : null,
-      vendors: selectedVendors.length < allVendors ? selectedVendors : null,
-      types: selectedTypes.length < allTypes ? selectedTypes : null,
+      startDate: startDate && startDate !== defaultStart ? startDate : null,
+      endDate: endDate && endDate !== defaultEnd ? endDate : null,
+      jobsites: selectedJobsites.length && selectedJobsites.length < allJobsites ? selectedJobsites : null,
+      vendors: selectedVendors.length && selectedVendors.length < allVendors ? selectedVendors : null,
+      types: selectedTypes.length && selectedTypes.length < allTypes ? selectedTypes : null,
+      excludeRock: document.getElementById('btn-exclude-rock').classList.contains('active'),
     };
 
     this.currentPage = 1;
+    this.syncFiltersToUrl();
     this.refresh();
   },
 
   clearFilters() {
-    this.filters = {};
-    // Reset UI
-    document.querySelectorAll('.ms-item, .ms-all, #filter-types input').forEach(cb => { cb.checked = true; });
-    if (this.filterOptions) {
-      if (this.filterOptions.dateRange.min) {
-        document.getElementById('filter-start-date').value = this.filterOptions.dateRange.min.substring(0, 7);
-      }
-      if (this.filterOptions.dateRange.max) {
-        document.getElementById('filter-end-date').value = this.filterOptions.dateRange.max.substring(0, 7);
-      }
-    }
-    // Update multi-select button labels
-    document.querySelectorAll('.multi-select-btn').forEach(btn => {
-      const total = btn.parentElement.querySelectorAll('.ms-item').length;
-      btn.textContent = `All (${total})`;
-    });
+    this.filters = {
+      startDate: null,
+      endDate: null,
+      jobsites: null,
+      vendors: null,
+      types: null,
+      excludeRock: false,
+    };
+    this.applyFilterStateToControls();
     this.currentPage = 1;
+    this.syncFiltersToUrl();
     this.refresh();
+  },
+
+  toggleRockExclusion() {
+    this.filters.excludeRock = !this.filters.excludeRock;
+    this.updateRockExclusionButton();
+    this.applyFilters();
   },
 
   // -- Upload --
@@ -433,7 +547,6 @@ const App = {
     const dropzone = document.getElementById('upload-dropzone');
     const fileInput = document.getElementById('upload-file-input');
     const submitBtn = document.getElementById('btn-upload-submit');
-    let selectedFile = null;
 
     // Drag and drop
     dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -443,7 +556,7 @@ const App = {
       dropzone.classList.remove('dragover');
       const file = e.dataTransfer.files[0];
       if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
-        selectedFile = file;
+        this.uploadState.selectedFile = file;
         document.getElementById('upload-file-name').textContent = file.name;
         submitBtn.disabled = false;
       }
@@ -451,14 +564,14 @@ const App = {
 
     fileInput.addEventListener('change', () => {
       if (fileInput.files[0]) {
-        selectedFile = fileInput.files[0];
-        document.getElementById('upload-file-name').textContent = selectedFile.name;
+        this.uploadState.selectedFile = fileInput.files[0];
+        document.getElementById('upload-file-name').textContent = this.uploadState.selectedFile.name;
         submitBtn.disabled = false;
       }
     });
 
     submitBtn.addEventListener('click', async () => {
-      if (!selectedFile) return;
+      if (!this.uploadState.selectedFile) return;
       const mode = document.querySelector('input[name="upload-mode"]:checked').value;
       const progress = document.getElementById('upload-progress');
       const result = document.getElementById('upload-result');
@@ -469,7 +582,7 @@ const App = {
 
       try {
         const formData = new FormData();
-        formData.append('file', selectedFile);
+        formData.append('file', this.uploadState.selectedFile);
         formData.append('mode', mode);
 
         const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -502,8 +615,28 @@ const App = {
 
       progress.classList.add('hidden');
       result.classList.remove('hidden');
-      submitBtn.disabled = false;
+      submitBtn.disabled = !this.uploadState.selectedFile;
     });
+  },
+
+  resetUploadModalState() {
+    this.uploadState.selectedFile = null;
+    const fileInput = document.getElementById('upload-file-input');
+    const submitBtn = document.getElementById('btn-upload-submit');
+    const progress = document.getElementById('upload-progress');
+    const result = document.getElementById('upload-result');
+    const fileName = document.getElementById('upload-file-name');
+    const appendMode = document.querySelector('input[name="upload-mode"][value="append"]');
+
+    if (fileInput) fileInput.value = '';
+    if (submitBtn) submitBtn.disabled = true;
+    if (progress) progress.classList.add('hidden');
+    if (result) {
+      result.className = 'upload-result hidden';
+      result.innerHTML = '';
+    }
+    if (fileName) fileName.textContent = '';
+    if (appendMode) appendMode.checked = true;
   },
 
   async loadUploadHistory() {
@@ -817,9 +950,347 @@ const App = {
     window.location.href = `/api/export${qs ? '?' + qs : ''}`;
   },
 
+  async copyShareLink() {
+    this.syncFiltersToUrl();
+    const shareUrl = window.location.href;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const tempInput = document.createElement('textarea');
+        tempInput.value = shareUrl;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+      }
+      this.flashButtonLabel('btn-share-view', 'Copied');
+    } catch (err) {
+      console.error('Unable to copy share link:', err);
+      alert(`Copy failed. Share this link manually:\n\n${shareUrl}`);
+    }
+  },
+
+  flashButtonLabel(id, label) {
+    const button = document.getElementById(id);
+    if (!button) return;
+    const originalLabel = button.dataset.originalLabel || button.textContent;
+    button.dataset.originalLabel = originalLabel;
+    button.textContent = label;
+    window.clearTimeout(button._labelTimeout);
+    button._labelTimeout = window.setTimeout(() => {
+      button.textContent = button.dataset.originalLabel || originalLabel;
+    }, 1800);
+  },
+
+  formatDateFilterSummary() {
+    const start = document.getElementById('filter-start-date')?.value || this.filterOptions?.dateRange.min?.substring(0, 7) || '';
+    const end = document.getElementById('filter-end-date')?.value || this.filterOptions?.dateRange.max?.substring(0, 7) || '';
+    if (!start && !end) return 'All dates';
+    if (start && end && start === end) return Fmt.monthLabel(start);
+    return `${start ? Fmt.monthLabel(start) : 'Start'} to ${end ? Fmt.monthLabel(end) : 'Current'}`;
+  },
+
+  formatSelectionSummary(selectedValues, options) {
+    if (!options?.length || !selectedValues?.length) {
+      return options?.length ? `All (${options.length})` : 'All';
+    }
+
+    const labels = options
+      .filter(option => selectedValues.includes(option.value))
+      .map(option => option.label);
+
+    if (!labels.length) return 'No matches';
+    if (labels.length <= 3) return labels.join(', ');
+    return `${labels.length} selected`;
+  },
+
+  getFilterSummaryItems() {
+    const typeOptions = (this.filterOptions?.types || []).map(type => ({ value: type, label: type }));
+    return [
+      { label: 'Date Range', value: this.formatDateFilterSummary() },
+      { label: 'Jobsites', value: this.formatSelectionSummary(this.filters.jobsites, this.filterOptions?.jobsites || []) },
+      { label: 'Vendors', value: this.formatSelectionSummary(this.filters.vendors, this.filterOptions?.vendors || []) },
+      { label: 'Types', value: this.formatSelectionSummary(this.filters.types, typeOptions) },
+      { label: 'Special', value: this.filters.excludeRock ? `Excluding ${ROCK_ENTERPRISES_VENDOR}` : 'None' },
+    ];
+  },
+
+  getReportKpis() {
+    return [
+      { label: 'Total Gross Spend', value: document.getElementById('kpi-gross-spend').textContent },
+      { label: 'Customer Credits', value: document.getElementById('kpi-customer-credits').textContent },
+      { label: 'Accounting Adjustments', value: document.getElementById('kpi-accounting-adj').textContent },
+      { label: 'Net Cost to PSI', value: document.getElementById('kpi-net-cost').textContent },
+      { label: 'Active Jobsites', value: document.getElementById('kpi-active-jobsites').textContent },
+      { label: 'Active Vendors', value: document.getElementById('kpi-active-vendors').textContent },
+    ];
+  },
+
+  canvasToImageDataUrl(canvasId) {
+    const canvas = typeof canvasId === 'string' ? document.getElementById(canvasId) : canvasId;
+    if (!canvas || !canvas.width || !canvas.height) return '';
+
+    const imageCanvas = document.createElement('canvas');
+    imageCanvas.width = canvas.width;
+    imageCanvas.height = canvas.height;
+    const ctx = imageCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
+    ctx.drawImage(canvas, 0, 0);
+    return imageCanvas.toDataURL('image/png');
+  },
+
+  async fetchAllFilteredTransactions() {
+    const qs = this.buildQueryString();
+    const sortQs = `sortBy=${this.currentSort.field}&sortDir=${this.currentSort.dir}&page=1&limit=1000000`;
+    const sep = qs ? '&' : '';
+    const url = `/api/transactions?${sortQs}${sep}${qs}`;
+    const result = await (await fetch(url)).json();
+    return result.data || [];
+  },
+
+  buildTransactionsReportTable(transactions) {
+    if (!transactions.length) {
+      return '<div class="report-empty">No transactions match the current filters.</div>';
+    }
+
+    const rows = transactions.map(t => `
+      <tr>
+        <td>${Fmt.date(t.date)}</td>
+        <td>${this.escapeHtml(this.jobsiteMapping[t.baseJob] || t.baseJob || '--')}</td>
+        <td>${this.escapeHtml(t.serviceOrder || '--')}</td>
+        <td>${this.escapeHtml(t.category || '--')}</td>
+        <td>${this.escapeHtml(t.vendorName || '--')}</td>
+        <td>${this.escapeHtml(t.description || '--')}</td>
+        <td class="num">${t.debit ? Fmt.currencyFull(t.debit) : ''}</td>
+        <td class="num">${t.credit ? Fmt.currencyFull(t.credit) : ''}</td>
+        <td class="num">${Fmt.currencyFull(t.net)}</td>
+        <td>${this.escapeHtml(t.ref || '')}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Jobsite</th>
+            <th>Service Order</th>
+            <th>Category</th>
+            <th>Vendor</th>
+            <th>Description</th>
+            <th class="num">Debit</th>
+            <th class="num">Credit</th>
+            <th class="num">Net</th>
+            <th>Ref</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  },
+
+  buildReportMarkup({ includeTransactions = false, transactions = [] } = {}) {
+    const generatedAt = new Date().toLocaleString();
+    const filterSummary = this.getFilterSummaryItems().map(item => `
+      <div class="report-meta-item">
+        <span>${item.label}</span>
+        <strong>${this.escapeHtml(item.value)}</strong>
+      </div>
+    `).join('');
+
+    const kpis = this.getReportKpis().map(item => `
+      <div class="report-kpi">
+        <div class="report-kpi-label">${item.label}</div>
+        <div class="report-kpi-value">${this.escapeHtml(item.value)}</div>
+      </div>
+    `).join('');
+
+    const spendChart = this.canvasToImageDataUrl('chart-spend-over-time');
+    const jobsiteChart = this.canvasToImageDataUrl('chart-jobsite-breakdown');
+    const vendorChart = this.canvasToImageDataUrl('chart-vendor-pie');
+    const typeChart = this.canvasToImageDataUrl('chart-type-breakdown');
+    const vendorTableHtml = document.getElementById('vendor-table-container').innerHTML || '<div class="report-empty">No vendor data available.</div>';
+
+    return `
+      <div class="report-root">
+        <div class="report-sheet">
+          <div class="report-header">
+            <div class="report-title">
+              <h1>PSI Sub-Contract Dashboard Report</h1>
+              <p>Snapshot of the currently selected dashboard view.</p>
+            </div>
+            <div class="report-generated">Generated ${this.escapeHtml(generatedAt)}</div>
+          </div>
+
+          <div class="report-meta-grid">${filterSummary}</div>
+          <div class="report-kpis">${kpis}</div>
+
+          <div class="report-grid">
+            <section class="report-card-wide">
+              <h2>Spend Over Time</h2>
+              ${spendChart ? `<img src="${spendChart}" alt="Spend Over Time chart" />` : '<div class="report-empty">No chart data available.</div>'}
+            </section>
+
+            <section class="report-card-wide">
+              <h2>Jobsite Breakdown</h2>
+              ${jobsiteChart ? `<img src="${jobsiteChart}" alt="Jobsite Breakdown chart" />` : '<div class="report-empty">No chart data available.</div>'}
+            </section>
+
+            <section class="report-card">
+              <h2>Vendor Share of Spend</h2>
+              ${vendorChart ? `<img src="${vendorChart}" alt="Vendor Share chart" />` : '<div class="report-empty">No chart data available.</div>'}
+            </section>
+
+            <section class="report-card">
+              <h2>Vendor Details</h2>
+              <div class="table-scroll">${vendorTableHtml}</div>
+            </section>
+
+            <section class="report-card-wide">
+              <h2>Transaction Type Breakdown</h2>
+              ${typeChart ? `<img src="${typeChart}" alt="Transaction Type Breakdown chart" />` : '<div class="report-empty">No chart data available.</div>'}
+            </section>
+
+            ${includeTransactions ? `
+              <section class="report-card-wide">
+                <h2>Filtered Transactions (${Fmt.number(transactions.length)})</h2>
+                ${this.buildTransactionsReportTable(transactions)}
+              </section>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  ensureReportRoot() {
+    if (!this.reportRoot) {
+      this.reportRoot = document.getElementById('report-capture-root');
+    }
+    return this.reportRoot;
+  },
+
+  async waitForImages(container) {
+    const images = [...container.querySelectorAll('img')];
+    await Promise.all(images.map(img => (
+      img.complete
+        ? Promise.resolve()
+        : new Promise(resolve => {
+          img.addEventListener('load', resolve, { once: true });
+          img.addEventListener('error', resolve, { once: true });
+        })
+    )));
+  },
+
+  downloadDataUrl(dataUrl, fileName) {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  },
+
+  async printReport() {
+    const button = document.getElementById('btn-print-report');
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Preparing...';
+
+    try {
+      const transactions = await this.fetchAllFilteredTransactions();
+      const reportWindow = window.open('', '_blank');
+      if (!reportWindow) throw new Error('The browser blocked the report window.');
+
+      reportWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>PSI Dashboard Report</title>
+          <link rel="stylesheet" href="/styles/main.css">
+          <style>
+            @page { margin: 0.5in; }
+            body { margin: 0; background: #ffffff; }
+            .report-root { background: #ffffff; padding: 0; }
+            .report-sheet { border: none; box-shadow: none; border-radius: 0; padding: 0; }
+            .report-card, .report-card-wide, .report-meta-item, .report-kpi { break-inside: avoid; page-break-inside: avoid; }
+          </style>
+        </head>
+        <body>
+          ${this.buildReportMarkup({ includeTransactions: true, transactions })}
+          <script>
+            window.addEventListener('load', function () {
+              window.setTimeout(function () {
+                window.print();
+              }, 300);
+            });
+            window.addEventListener('afterprint', function () {
+              window.close();
+            });
+          <\/script>
+        </body>
+        </html>
+      `);
+      reportWindow.document.close();
+    } catch (err) {
+      console.error('Failed to print report:', err);
+      alert(`Unable to generate the print report: ${err.message}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  },
+
+  async exportJPEG() {
+    const button = document.getElementById('btn-export-jpeg');
+    const originalLabel = button.textContent;
+    const reportRoot = this.ensureReportRoot();
+
+    button.disabled = true;
+    button.textContent = 'Rendering...';
+
+    try {
+      if (typeof html2canvas !== 'function') {
+        throw new Error('JPEG export library did not load.');
+      }
+
+      reportRoot.innerHTML = this.buildReportMarkup();
+      reportRoot.classList.remove('hidden');
+      await this.waitForImages(reportRoot);
+
+      const canvas = await html2canvas(reportRoot.firstElementChild, {
+        backgroundColor: '#f8fafc',
+        scale: 2,
+        useCORS: true,
+      });
+
+      const fileName = `psi-dashboard-report-${new Date().toISOString().slice(0, 10)}.jpg`;
+      this.downloadDataUrl(canvas.toDataURL('image/jpeg', 0.92), fileName);
+    } catch (err) {
+      console.error('Failed to export JPEG:', err);
+      alert(`Unable to export JPEG: ${err.message}`);
+    } finally {
+      reportRoot.classList.add('hidden');
+      reportRoot.innerHTML = '';
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  },
+
   showModal(id) {
     document.getElementById(id).classList.remove('hidden');
     if (id === 'upload-modal') this.loadUploadHistory();
+  },
+
+  hideModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add('hidden');
+    if (id === 'upload-modal') this.resetUploadModalState();
   },
 };
 

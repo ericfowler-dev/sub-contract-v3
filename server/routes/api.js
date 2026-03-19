@@ -20,6 +20,7 @@ function getFilters(query) {
     jobsites: query.jobsites ? query.jobsites.split(',') : null,
     vendors: query.vendors ? query.vendors.split(',') : null,
     types: query.types ? query.types.split(',') : null,
+    excludeVendors: query.excludeVendors ? query.excludeVendors.split(',') : null,
   };
 }
 

@@ -187,6 +187,9 @@ function applyFilters(transactions, filters) {
   if (filters.vendors && filters.vendors.length) {
     result = result.filter(t => filters.vendors.includes(t.vendorName));
   }
+  if (filters.excludeVendors && filters.excludeVendors.length) {
+    result = result.filter(t => !filters.excludeVendors.includes(t.vendorName));
+  }
   if (filters.types && filters.types.length) {
     result = result.filter(t => filters.types.includes(t.type));
   }
@@ -210,6 +213,9 @@ function applyProjectionFilters(projections, filters) {
   }
   if (filters.vendors && filters.vendors.length) {
     result = result.filter(p => filters.vendors.includes(p.vendorName));
+  }
+  if (filters.excludeVendors && filters.excludeVendors.length) {
+    result = result.filter(p => !filters.excludeVendors.includes(p.vendorName));
   }
   if (filters.types && filters.types.length) {
     result = result.filter(p => filters.types.includes(p.type));
