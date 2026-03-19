@@ -104,7 +104,7 @@
   <section class="charts-grid">
     <!-- Spend Over Time -->
     <div class="chart-panel chart-wide">
-      <h2>Spend Over Time</h2>
+      <h2>Spend Over Time <span class="chart-subtitle">(monthly spend, cumulative net cost)</span></h2>
       <div class="chart-container">
         <canvas id="chart-spend-over-time"></canvas>
       </div>
@@ -245,6 +245,18 @@
         <!-- Projected Costs Tab -->
         <div id="tab-projections" class="settings-tab-content">
           <p class="settings-desc">Add projected sub-contract line items. Each entry shows as a red dashed line (summed by month) on the Spend Over Time chart and is flagged in red across all views.</p>
+          <div class="projection-actions">
+            <div class="projection-actions-row">
+              <select id="proj-import-mode" class="mapping-input projection-import-mode">
+                <option value="append">Append Import (skip duplicates)</option>
+                <option value="replace">Replace Existing Projections</option>
+              </select>
+              <input type="file" id="proj-import-file" class="hidden" accept=".xlsx,.xls,.csv" />
+              <button id="btn-import-projections" class="btn btn-secondary btn-sm">Import Projections File</button>
+              <button id="btn-export-projections-csv" class="btn btn-secondary btn-sm">Export Projections CSV</button>
+            </div>
+            <p class="projection-help">Backup format: use the exported projections CSV. Import accepts `.xlsx`, `.xls`, or `.csv` with columns like Month, Base Job, Vendor, Description, Invoice Number, PO Number, Type, and Amount.</p>
+          </div>
 
           <!-- Add new projection form -->
           <div class="projection-form">

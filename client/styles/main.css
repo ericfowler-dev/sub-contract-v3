@@ -490,6 +490,27 @@ body {
 .row-projected td { color: #991b1b; }
 
 /* Projection form */
+.projection-actions {
+  margin-bottom: 16px;
+}
+
+.projection-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.projection-import-mode {
+  max-width: 260px;
+}
+
+.projection-help {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .projection-form {
   background: #fef2f2;
   border: 1px dashed #fca5a5;
@@ -1082,5 +1103,9 @@ body {
   .proj-field-compact,
   .proj-field-action {
     flex: 1 1 100%;
+  }
+  .projection-import-mode {
+    max-width: none;
+    width: 100%;
   }
 }

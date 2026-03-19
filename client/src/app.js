@@ -84,6 +84,11 @@ const App = {
     document.getElementById('btn-export-csv').addEventListener('click', () => this.exportCSV());
     document.getElementById('btn-print-report').addEventListener('click', () => this.printReport());
     document.getElementById('btn-export-jpeg').addEventListener('click', () => this.exportJPEG());
+    document.getElementById('btn-import-projections').addEventListener('click', () => {
+      document.getElementById('proj-import-file').click();
+    });
+    document.getElementById('proj-import-file').addEventListener('change', () => this.importProjectionsFile());
+    document.getElementById('btn-export-projections-csv').addEventListener('click', () => this.exportProjectionsCSV());
   },
 
   // -- API Helpers --
@@ -781,6 +786,22 @@ const App = {
     }
   },
 
+  setProjectionStatus(message, tone = '', clearAfterMs = 0) {
+    const statusEl = document.getElementById('projection-save-status');
+    if (!statusEl) return;
+
+    statusEl.textContent = message || '';
+    statusEl.className = tone ? `save-status ${tone}` : 'save-status';
+
+    window.clearTimeout(statusEl._clearTimeout);
+    if (clearAfterMs) {
+      statusEl._clearTimeout = window.setTimeout(() => {
+        statusEl.textContent = '';
+        statusEl.className = 'save-status';
+      }, clearAfterMs);
+    }
+  },
+
   // -- Projections --
   async renderProjections() {
     try {
@@ -898,6 +919,43 @@ const App = {
     }
   },
 
+  async importProjectionsFile() {
+    const fileInput = document.getElementById('proj-import-file');
+    const button = document.getElementById('btn-import-projections');
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    const mode = document.getElementById('proj-import-mode').value;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('mode', mode);
+
+    button.disabled = true;
+    this.setProjectionStatus('Importing projections...', 'saving');
+
+    try {
+      const res = await fetch('/api/projections/import', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to import projected costs.');
+      }
+
+      const skippedText = data.rowsSkipped ? `, skipped ${data.rowsSkipped} duplicates` : '';
+      this.setProjectionStatus(`Imported ${data.rowsAdded} projected costs${skippedText}.`, 'saved', 4500);
+      await this.refresh();
+      await this.renderProjections();
+    } catch (err) {
+      console.error('Failed to import projections:', err);
+      this.setProjectionStatus(err.message || 'Projection import failed.', 'error');
+    } finally {
+      button.disabled = false;
+      fileInput.value = '';
+    }
+  },
+
   async addProjection() {
     const month = document.getElementById('proj-month').value;
     const baseJob = document.getElementById('proj-jobsite').value;
@@ -911,9 +969,7 @@ const App = {
     if (!month) { alert('Please select a month.'); return; }
     if (!amount || amount <= 0) { alert('Please enter a valid amount.'); return; }
 
-    const statusEl = document.getElementById('projection-save-status');
-    statusEl.textContent = 'Adding...';
-    statusEl.className = 'save-status saving';
+    this.setProjectionStatus('Adding...', 'saving');
 
     try {
       const res = await fetch('/api/projections', {
@@ -926,9 +982,7 @@ const App = {
         throw new Error(data.error || 'Unable to add projected cost.');
       }
 
-      statusEl.textContent = 'Added';
-      statusEl.className = 'save-status saved';
-      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      this.setProjectionStatus('Added', 'saved', 2000);
       // Clear form fields (keep month and jobsite for quick re-entry)
       document.getElementById('proj-description').value = '';
       document.getElementById('proj-invoice').value = '';
@@ -940,14 +994,17 @@ const App = {
       this.renderSpendOverTime(spendTime);
     } catch (err) {
       console.error('Failed to add projection:', err);
-      statusEl.textContent = 'Error';
-      statusEl.className = 'save-status error';
+      this.setProjectionStatus('Error', 'error');
     }
   },
 
   exportCSV() {
     const qs = this.buildQueryString();
     window.location.href = `/api/export${qs ? '?' + qs : ''}`;
+  },
+
+  exportProjectionsCSV() {
+    window.location.href = '/api/projections/export';
   },
 
   async copyShareLink() {

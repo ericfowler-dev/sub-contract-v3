@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('fs');
+const multer = require('multer');
+const path = require('path');
 const { loadDb, saveDb } = require('../services/db');
 const {
   computeSummary,
@@ -9,8 +12,27 @@ const {
   applyFilters,
   applyProjectionFilters,
 } = require('../services/analytics');
+const {
+  parseProjectionImportFile,
+  buildProjectionCsv,
+  createProjectionImportKey,
+} = require('../services/projections');
 
 const router = express.Router();
+const projectionImportUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, req.app.locals.uploadsDir),
+    filename: (req, file, cb) => cb(null, `projection-import-${Date.now()}-${file.originalname}`),
+  }),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
+      return cb(new Error('Only .xlsx, .xls, and .csv files are allowed'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // Parse filter params from query string
 function getFilters(query) {
@@ -83,6 +105,26 @@ function sanitizeProjectionInput(input = {}) {
   return sanitized;
 }
 
+function createProjectionRecord(input = {}) {
+  const sanitized = sanitizeProjectionInput(input);
+  const [year, monthNum] = (sanitized.month || '').split('-').map(Number);
+
+  return {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    month: sanitized.month,
+    year: Number.isFinite(year) ? year : null,
+    monthNum: Number.isFinite(monthNum) ? monthNum : null,
+    baseJob: sanitized.baseJob || '',
+    vendorName: sanitized.vendorName || '',
+    description: sanitized.description || '',
+    invoiceNumber: sanitized.invoiceNumber || '',
+    poNumber: sanitized.poNumber || '',
+    amount: Number(sanitized.amount) || 0,
+    type: sanitized.type || 'PUR-SUB',
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // GET /api/summary
 router.get('/summary', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
@@ -115,14 +157,19 @@ router.get('/spend-over-time', (req, res) => {
   }
   const sortedMonths = [...allMonths].sort();
 
+  let cumulativeNet = 0;
   const result = sortedMonths.map(month => {
     const actual = actuals.find(a => a.month === month) || {
       month, grossSpend: 0, customerCredits: 0, accountingAdj: 0, net: 0, stockMaterial: 0, purchaseAdj: 0,
     };
+    const projected = projByMonth[month] || 0;
+    const monthlyNet = Math.round((actual.net + projected) * 100) / 100;
+    cumulativeNet = Math.round((cumulativeNet + monthlyNet) * 100) / 100;
     return {
       ...actual,
-      projected: projByMonth[month] || null,
-      net: Math.round((actual.net + (projByMonth[month] || 0)) * 100) / 100,
+      projected: projected || null,
+      monthlyNet,
+      cumulativeNet,
     };
   });
 
@@ -234,6 +281,89 @@ router.get('/projections', (req, res) => {
   res.json((db.projections || []).map(normalizeProjection));
 });
 
+// GET /api/projections/export
+router.get('/projections/export', (req, res) => {
+  const db = loadDb(req.app.locals.dataDir);
+  const projections = (db.projections || []).map(normalizeProjection);
+  const csv = buildProjectionCsv(projections, db.jobsiteMapping);
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=projected-costs-export.csv');
+  res.send(csv);
+});
+
+// POST /api/projections/import
+router.post('/projections/import', (req, res) => {
+  projectionImportUpload.single('file')(req, res, (uploadErr) => {
+    if (uploadErr) {
+      return res.status(400).json({ error: uploadErr.message });
+    }
+
+    let uploadedPath = req.file?.path;
+
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No projection import file uploaded.' });
+      }
+
+      const mode = req.body.mode === 'replace' ? 'replace' : 'append';
+      const db = loadDb(req.app.locals.dataDir);
+      if (!Array.isArray(db.projections)) db.projections = [];
+
+      const parsed = parseProjectionImportFile(uploadedPath, db.jobsiteMapping);
+      if (!parsed.rows.length && !parsed.errors.length) {
+        return res.status(400).json({ error: 'The file did not contain any projection rows to import.' });
+      }
+      if (parsed.errors.length) {
+        return res.status(400).json({
+          error: `Projection import failed. ${parsed.errors.slice(0, 10).join(' ')}`,
+        });
+      }
+
+      const importedItems = parsed.rows.map(createProjectionRecord);
+
+      let rowsAdded = 0;
+      let rowsSkipped = 0;
+
+      if (mode === 'replace') {
+        db.projections = importedItems;
+        rowsAdded = importedItems.length;
+      } else {
+        const existingKeys = new Set(db.projections.map(createProjectionImportKey));
+        for (const item of importedItems) {
+          const key = createProjectionImportKey(item);
+          if (existingKeys.has(key)) {
+            rowsSkipped++;
+            continue;
+          }
+          db.projections.push(item);
+          existingKeys.add(key);
+          rowsAdded++;
+        }
+      }
+
+      saveDb(req.app.locals.dataDir, db);
+
+      res.json({
+        success: true,
+        mode,
+        fileName: req.file.originalname,
+        rowsParsed: parsed.rows.length,
+        rowsAdded,
+        rowsSkipped,
+        totalRows: db.projections.length,
+      });
+    } catch (err) {
+      console.error('Projection import error:', err);
+      res.status(500).json({ error: err.message });
+    } finally {
+      if (uploadedPath && fs.existsSync(uploadedPath)) {
+        fs.unlinkSync(uploadedPath);
+      }
+    }
+  });
+});
+
 // POST /api/projections - add a new projected line item
 router.post('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
@@ -245,21 +375,7 @@ router.post('/projections', (req, res) => {
   if (!(p.amount > 0)) {
     return res.status(400).json({ error: 'Amount must be greater than zero.' });
   }
-  const [year, monthNum] = p.month.split('-').map(Number);
-  const item = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    month: p.month,
-    year,
-    monthNum,
-    baseJob: p.baseJob || '',
-    vendorName: p.vendorName || '',
-    description: p.description || '',
-    invoiceNumber: p.invoiceNumber || '',
-    poNumber: p.poNumber || '',
-    amount: Number(p.amount) || 0,
-    type: p.type || 'PUR-SUB',
-    createdAt: new Date().toISOString(),
-  };
+  const item = createProjectionRecord(p);
   db.projections.push(item);
   saveDb(req.app.locals.dataDir, db);
   res.json({ success: true, projection: normalizeProjection(item), total: db.projections.length });

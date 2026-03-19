@@ -188,7 +188,7 @@ function applyFilters(transactions, filters) {
     result = result.filter(t => filters.vendors.includes(t.vendorName));
   }
   if (filters.excludeVendors && filters.excludeVendors.length) {
-    result = result.filter(t => !filters.excludeVendors.includes(t.vendorName));
+    result = result.filter(t => !matchesExcludedVendor(t.vendorName, filters.excludeVendors));
   }
   if (filters.types && filters.types.length) {
     result = result.filter(t => filters.types.includes(t.type));
@@ -215,7 +215,7 @@ function applyProjectionFilters(projections, filters) {
     result = result.filter(p => filters.vendors.includes(p.vendorName));
   }
   if (filters.excludeVendors && filters.excludeVendors.length) {
-    result = result.filter(p => !filters.excludeVendors.includes(p.vendorName));
+    result = result.filter(p => !matchesExcludedVendor(p.vendorName, filters.excludeVendors));
   }
   if (filters.types && filters.types.length) {
     result = result.filter(p => filters.types.includes(p.type));
@@ -230,6 +230,23 @@ function sum(arr, field) {
 
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+function matchesExcludedVendor(vendorName, patterns) {
+  const normalizedVendor = normalizeVendorText(vendorName);
+  if (!normalizedVendor) return false;
+
+  return patterns.some((pattern) => {
+    const normalizedPattern = normalizeVendorText(pattern);
+    return normalizedPattern && normalizedVendor.includes(normalizedPattern);
+  });
+}
+
+function normalizeVendorText(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ');
 }
 
 module.exports = {

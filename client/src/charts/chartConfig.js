@@ -45,8 +45,8 @@ const ChartConfigs = {
         order: 4,
       },
       {
-        label: 'Net Cost',
-        data: data.map(d => d.net),
+        label: 'Net Cost to Date',
+        data: data.map(d => d.cumulativeNet),
         type: 'line',
         borderColor: COLORS.net,
         backgroundColor: 'transparent',
@@ -87,6 +87,12 @@ const ChartConfigs = {
               label: (ctx) => {
                 if (ctx.raw === null) return null;
                 return `${ctx.dataset.label}: ${Fmt.currency(ctx.raw)}`;
+              },
+              footer: (items) => {
+                const idx = items[0]?.dataIndex;
+                if (idx === undefined) return '';
+                const row = data[idx];
+                return `Monthly Net: ${Fmt.currency(row.monthlyNet)}`;
               },
             },
           },
