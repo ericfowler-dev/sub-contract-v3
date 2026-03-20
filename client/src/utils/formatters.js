@@ -48,4 +48,16 @@ const Fmt = {
     if (!str) return '';
     return str.length > len ? str.substring(0, len) + '...' : str;
   },
+
+  typeLabel(type, includeCode = true) {
+    const labels = {
+      'PUR-SUB': 'Gross Spend',
+      'MFG-CUS': 'Credits',
+      'MFG-VAR': 'Accounting Adj',
+      'STK-MTL': 'Stock Material',
+      'ADJ-PUR': 'Purchase Adj',
+    };
+    const label = labels[type] || type || '--';
+    return includeCode && labels[type] ? `${label} (${type})` : label;
+  },
 };

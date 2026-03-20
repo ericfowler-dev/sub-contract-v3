@@ -118,7 +118,7 @@ function computeJobsiteBreakdown(transactions, jobsiteMapping) {
       vendors: [...j.vendors],
       serviceOrders: [...j.serviceOrders],
     }))
-    .sort((a, b) => b.grossSpend - a.grossSpend);
+    .sort((a, b) => b.net - a.net);
 }
 
 function computeVendorAnalysis(transactions) {

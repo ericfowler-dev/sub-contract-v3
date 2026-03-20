@@ -8,6 +8,7 @@ const App = {
   currentSort: { field: 'date', dir: 'desc' },
   currentPage: 1,
   jobsiteMapping: {},
+  metadata: null,
   projections: {},
   uploadState: { selectedFile: null },
   reportRoot: null,
@@ -28,6 +29,7 @@ const App = {
     document.getElementById('btn-clear-filters').addEventListener('click', () => this.clearFilters());
     document.getElementById('btn-exclude-rock').addEventListener('click', () => this.toggleRockExclusion());
     document.getElementById('btn-share-view').addEventListener('click', () => this.copyShareLink());
+    document.getElementById('btn-share-view').dataset.originalLabel = document.getElementById('btn-share-view').textContent;
 
     // Quick date range filters (YTD, Last 12 Mo, etc.)
     document.querySelectorAll('.quick-filter').forEach(btn => {
@@ -89,6 +91,7 @@ const App = {
     });
     document.getElementById('proj-import-file').addEventListener('change', () => this.importProjectionsFile());
     document.getElementById('btn-export-projections-csv').addEventListener('click', () => this.exportProjectionsCSV());
+    document.getElementById('btn-clear-projections').addEventListener('click', () => this.clearAllProjections());
   },
 
   // -- API Helpers --
@@ -193,7 +196,9 @@ const App = {
   async loadMetadata() {
     try {
       const meta = await (await fetch('/api/metadata')).json();
+      this.metadata = meta;
       const status = document.getElementById('data-status');
+      const versionChip = document.getElementById('app-version');
       if (meta.lastUpload) {
         const d = new Date(meta.lastUpload);
         status.textContent = `${meta.totalRows} rows | Last upload: ${d.toLocaleDateString()}`;
@@ -202,6 +207,10 @@ const App = {
         status.textContent = 'No data loaded';
         status.classList.remove('data-status-active');
       }
+      if (versionChip) {
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.1.0';
+      }
+      this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
   },
 
@@ -367,11 +376,14 @@ const App = {
     // Type checkboxes
     const typeDiv = document.getElementById('filter-types');
     typeDiv.innerHTML = opts.types.map(t =>
-      `<label class="type-checkbox"><input type="checkbox" value="${t}" checked />${t}</label>`
+      `<label class="type-checkbox"><input type="checkbox" value="${t}" checked />${Fmt.typeLabel(t)}</label>`
     ).join('');
 
     document.querySelectorAll('.ms-item, .ms-all').forEach(input => {
       input.addEventListener('change', () => this.updateMultiSelectControl(input.dataset.prefix));
+    });
+    document.querySelectorAll('.ms-search').forEach(input => {
+      input.addEventListener('input', () => this.filterMultiSelectOptions(input));
     });
 
     this.applyFilterStateToControls();
@@ -382,12 +394,23 @@ const App = {
     let html = `<div class="multi-select">`;
     html += `<button class="multi-select-btn" onclick="this.parentElement.classList.toggle('open')">All (${options.length})</button>`;
     html += `<div class="multi-select-dropdown">`;
-    html += `<label class="ms-option"><input type="checkbox" class="ms-all" data-prefix="${prefix}" checked onchange="App.toggleAllOptions(this)" /> Select All</label>`;
+    html += `<div class="ms-search-wrap"><input type="search" class="ms-search" data-prefix="${prefix}" placeholder="Search..." autocomplete="off" /></div>`;
+    html += `<label class="ms-option ms-option-select-all"><input type="checkbox" class="ms-all" data-prefix="${prefix}" checked onchange="App.toggleAllOptions(this)" /> Select All</label>`;
     for (const o of options) {
-      html += `<label class="ms-option"><input type="checkbox" class="ms-item" data-prefix="${prefix}" value="${o.value}" checked /> ${Fmt.truncate(o.label, 35)}</label>`;
+      const optionLabel = o.label || o.value || '';
+      html += `<label class="ms-option" data-prefix="${prefix}" data-label="${this.escapeHtml(optionLabel.toLowerCase())}"><input type="checkbox" class="ms-item" data-prefix="${prefix}" value="${this.escapeHtml(o.value)}" checked /> ${this.escapeHtml(Fmt.truncate(optionLabel, 35))}</label>`;
     }
     html += '</div></div>';
     return html;
+  },
+
+  filterMultiSelectOptions(input) {
+    const prefix = input.dataset.prefix;
+    const query = (input.value || '').trim().toLowerCase();
+    document.querySelectorAll(`.ms-option[data-prefix="${prefix}"]`).forEach(option => {
+      const label = option.dataset.label || '';
+      option.classList.toggle('hidden', Boolean(query) && !label.includes(query));
+    });
   },
 
   toggleAllOptions(checkbox) {
@@ -597,6 +620,9 @@ const App = {
         const data = await res.json();
 
         if (data.success) {
+          const staleProjectionText = data.staleProjectionsRemoved
+            ? `<br>Stale projections cleared: ${data.staleProjectionsRemoved}`
+            : '';
           result.className = 'upload-result success';
           result.innerHTML = `
             <strong>Upload Successful</strong><br>
@@ -605,6 +631,7 @@ const App = {
             Rows added: ${data.rowsAdded}<br>
             Duplicates skipped: ${data.rowsSkipped}<br>
             Total rows in database: ${data.totalRows}
+            ${staleProjectionText}
           `;
           // Refresh dashboard
           await this.loadFilterOptions();
@@ -805,6 +832,34 @@ const App = {
     }
   },
 
+  updateProjectionWindowNote() {
+    const note = document.getElementById('projection-window-note');
+    const monthInput = document.getElementById('proj-month');
+    const projectionStartMonth = this.metadata?.projectionStartMonth || this.filterOptions?.projectionStartMonth || '';
+    const latestActualMonth = this.metadata?.latestActualMonth || this.filterOptions?.latestActualMonth || '';
+
+    if (monthInput) {
+      monthInput.min = projectionStartMonth || '';
+      if (!monthInput.value && projectionStartMonth) {
+        monthInput.value = projectionStartMonth;
+      }
+    }
+
+    if (!note) return;
+
+    if (projectionStartMonth && latestActualMonth) {
+      note.textContent = `Latest actual month: ${Fmt.monthLabel(latestActualMonth)}. New projections must be ${Fmt.monthLabel(projectionStartMonth)} or later.`;
+      return;
+    }
+
+    if (projectionStartMonth) {
+      note.textContent = `New projections must be ${Fmt.monthLabel(projectionStartMonth)} or later.`;
+      return;
+    }
+
+    note.textContent = 'No uploaded actuals yet. Projections can start with any month.';
+  },
+
   // -- Projections --
   async renderProjections() {
     try {
@@ -815,6 +870,7 @@ const App = {
 
     // Populate jobsite and vendor dropdowns in the form
     this.populateProjectionDropdowns();
+    this.updateProjectionWindowNote();
 
     const tbody = document.getElementById('projections-body');
     const emptyMsg = document.getElementById('projections-empty');
@@ -836,9 +892,9 @@ const App = {
           <td class="projection-description-cell" title="${this.escapeHtml(p.description || '--')}">${this.escapeHtml(p.descriptionDisplay || p.description || '--')}</td>
           <td class="projection-ref-cell">${this.escapeHtml(p.invoiceNumber || '--')}</td>
           <td class="projection-ref-cell">${this.escapeHtml(p.poNumber || '--')}</td>
-          <td><span class="badge badge-projected">${p.type || 'PUR-SUB'}</span></td>
+          <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type || 'PUR-SUB'))}</span></td>
           <td class="num">${Fmt.currency(p.amount)}</td>
-          <td style="text-align:center"><button class="btn btn-sm btn-ghost projection-remove" data-id="${p.id}">X</button></td>
+          <td style="text-align:center"><button class="btn btn-sm btn-ghost projection-remove" data-id="${p.id}">Delete</button></td>
         </tr>
       `).join('');
 
@@ -854,9 +910,9 @@ const App = {
     tbody.querySelectorAll('.projection-remove').forEach(btn => {
       btn.addEventListener('click', async () => {
         await fetch(`/api/projections/${btn.dataset.id}`, { method: 'DELETE' });
-        this.renderProjections();
-        const spendTime = await this.api('spend-over-time');
-        this.renderSpendOverTime(spendTime);
+        await this.loadMetadata();
+        await this.renderProjections();
+        await this.refresh();
       });
     });
 
@@ -865,6 +921,28 @@ const App = {
     if (!addBtn.dataset.bound) {
       addBtn.dataset.bound = '1';
       addBtn.addEventListener('click', () => this.addProjection());
+    }
+  },
+
+  async clearAllProjections() {
+    if (!window.confirm('Clear all saved projected costs?')) return;
+
+    this.setProjectionStatus('Clearing projections...', 'saving');
+
+    try {
+      const res = await fetch('/api/projections', { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to clear projected costs.');
+      }
+
+      this.setProjectionStatus(`Cleared ${data.removed} projected cost${data.removed === 1 ? '' : 's'}.`, 'saved', 3500);
+      await this.loadMetadata();
+      await this.renderProjections();
+      await this.refresh();
+    } catch (err) {
+      console.error('Failed to clear projections:', err);
+      this.setProjectionStatus(err.message || 'Unable to clear projected costs.', 'error');
     }
   },
 
@@ -946,8 +1024,12 @@ const App = {
         throw new Error(data.error || 'Unable to import projected costs.');
       }
 
-      const skippedText = data.rowsSkipped ? `, skipped ${data.rowsSkipped} duplicates` : '';
-      this.setProjectionStatus(`Imported ${data.rowsAdded} projected costs${skippedText}.`, 'saved', 4500);
+      const skippedParts = [];
+      if (data.rowsSkippedDuplicates) skippedParts.push(`${data.rowsSkippedDuplicates} duplicates`);
+      if (data.rowsSkippedPastMonths) skippedParts.push(`${data.rowsSkippedPastMonths} past months`);
+      const skippedText = skippedParts.length ? ` Skipped ${skippedParts.join(' and ')}.` : '';
+      this.setProjectionStatus(`Imported ${data.rowsAdded} projected costs.${skippedText}`, 'saved', 5000);
+      await this.loadMetadata();
       await this.refresh();
       await this.renderProjections();
     } catch (err) {
@@ -971,6 +1053,10 @@ const App = {
 
     if (!month) { alert('Please select a month.'); return; }
     if (!amount || amount <= 0) { alert('Please enter a valid amount.'); return; }
+    if (this.metadata?.projectionStartMonth && month < this.metadata.projectionStartMonth) {
+      alert(`Projected month must be ${Fmt.monthLabel(this.metadata.projectionStartMonth)} or later.`);
+      return;
+    }
 
     this.setProjectionStatus('Adding...', 'saving');
 
@@ -992,12 +1078,12 @@ const App = {
       document.getElementById('proj-po').value = '';
       document.getElementById('proj-amount').value = '';
       // Refresh
-      this.renderProjections();
-      const spendTime = await this.api('spend-over-time');
-      this.renderSpendOverTime(spendTime);
+      await this.loadMetadata();
+      await this.renderProjections();
+      await this.refresh();
     } catch (err) {
       console.error('Failed to add projection:', err);
-      this.setProjectionStatus('Error', 'error');
+      this.setProjectionStatus(err.message || 'Unable to add projected cost.', 'error');
     }
   },
 
@@ -1024,7 +1110,6 @@ const App = {
       this.filters = this.getFiltersFromControls();
       this.currentPage = 1;
       this.syncFiltersToUrl();
-      await this.refresh();
 
       const shareUrl = window.location.href;
       if (navigator.clipboard?.writeText) {
@@ -1039,7 +1124,8 @@ const App = {
       }
       copied = true;
       if (button) button.disabled = false;
-      this.flashButtonLabel('btn-share-view', 'Copied');
+      this.flashButtonLabel('btn-share-view', 'Copied', originalLabel);
+      this.refresh();
     } catch (err) {
       console.error('Unable to copy share link:', err);
       alert(`Copy failed. Share this link manually:\n\n${window.location.href}`);
@@ -1051,10 +1137,10 @@ const App = {
     }
   },
 
-  flashButtonLabel(id, label) {
+  flashButtonLabel(id, label, restoreLabel = null) {
     const button = document.getElementById(id);
     if (!button) return;
-    const originalLabel = button.dataset.originalLabel || button.textContent;
+    const originalLabel = restoreLabel || button.dataset.originalLabel || button.textContent;
     button.dataset.originalLabel = originalLabel;
     button.textContent = label;
     window.clearTimeout(button._labelTimeout);
@@ -1086,12 +1172,12 @@ const App = {
   },
 
   getFilterSummaryItems() {
-    const typeOptions = (this.filterOptions?.types || []).map(type => ({ value: type, label: type }));
+    const typeOptions = (this.filterOptions?.types || []).map(type => ({ value: type, label: Fmt.typeLabel(type) }));
     return [
       { label: 'Date Range', value: this.formatDateFilterSummary() },
       { label: 'Jobsites', value: this.formatSelectionSummary(this.filters.jobsites, this.filterOptions?.jobsites || []) },
       { label: 'Vendors', value: this.formatSelectionSummary(this.filters.vendors, this.filterOptions?.vendors || []) },
-      { label: 'Types', value: this.formatSelectionSummary(this.filters.types, typeOptions) },
+      { label: 'Cost Types', value: this.formatSelectionSummary(this.filters.types, typeOptions) },
       { label: 'Special', value: this.filters.excludeRock ? `Excluding ${ROCK_ENTERPRISES_VENDOR}` : 'None' },
     ];
   },
@@ -1099,7 +1185,7 @@ const App = {
   getReportKpis() {
     return [
       { label: 'Total Gross Spend', value: document.getElementById('kpi-gross-spend').textContent },
-      { label: 'Customer Credits', value: document.getElementById('kpi-customer-credits').textContent },
+      { label: 'Credits', value: document.getElementById('kpi-customer-credits').textContent },
       { label: 'Accounting Adjustments', value: document.getElementById('kpi-accounting-adj').textContent },
       { label: 'Net Cost to PSI', value: document.getElementById('kpi-net-cost').textContent },
       { label: 'Active Jobsites', value: document.getElementById('kpi-active-jobsites').textContent },
@@ -1209,8 +1295,8 @@ const App = {
 
           <div class="report-grid">
             <section class="report-card-wide">
-              <h2>Spend Over Time</h2>
-              ${spendChart ? `<img src="${spendChart}" alt="Spend Over Time chart" />` : '<div class="report-empty">No chart data available.</div>'}
+              <h2>Monthly Net vs Net Cost To Date</h2>
+              ${spendChart ? `<img src="${spendChart}" alt="Monthly Net vs Net Cost To Date chart" />` : '<div class="report-empty">No chart data available.</div>'}
             </section>
 
             <section class="report-card-wide">

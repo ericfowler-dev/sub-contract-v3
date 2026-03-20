@@ -97,6 +97,59 @@ function createProjectionImportKey(projection) {
   ].join('|');
 }
 
+function getLatestActualMonth(transactions = []) {
+  const months = transactions
+    .map((transaction) => cleanText(transaction?.date).slice(0, 7))
+    .filter((value) => /^\d{4}-\d{2}$/.test(value))
+    .sort();
+
+  return months[months.length - 1] || null;
+}
+
+function shiftMonth(monthValue, deltaMonths) {
+  if (!/^\d{4}-\d{2}$/.test(monthValue || '')) return null;
+
+  const [year, month] = monthValue.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + deltaMonths, 1));
+  return formatMonth(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1);
+}
+
+function getProjectionStartMonth(transactions = []) {
+  const latestActualMonth = getLatestActualMonth(transactions);
+  return latestActualMonth ? shiftMonth(latestActualMonth, 1) : null;
+}
+
+function isProjectionMonthAllowed(monthValue, transactions = []) {
+  if (!/^\d{4}-\d{2}$/.test(monthValue || '')) return false;
+
+  const projectionStartMonth = getProjectionStartMonth(transactions);
+  if (!projectionStartMonth) return true;
+
+  return monthValue >= projectionStartMonth;
+}
+
+function pruneStaleProjections(projections = [], transactions = []) {
+  const projectionStartMonth = getProjectionStartMonth(transactions);
+  const items = Array.isArray(projections) ? projections : [];
+
+  if (!projectionStartMonth) {
+    return { projections: items, removed: 0, projectionStartMonth };
+  }
+
+  const valid = [];
+  let removed = 0;
+
+  for (const projection of items) {
+    if (isProjectionMonthAllowed(projection?.month, transactions)) {
+      valid.push(projection);
+    } else {
+      removed++;
+    }
+  }
+
+  return { projections: valid, removed, projectionStartMonth };
+}
+
 function normalizeHeader(value) {
   return cleanText(value).toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -225,4 +278,8 @@ module.exports = {
   parseProjectionImportFile,
   buildProjectionCsv,
   createProjectionImportKey,
+  getLatestActualMonth,
+  getProjectionStartMonth,
+  isProjectionMonthAllowed,
+  pruneStaleProjections,
 };

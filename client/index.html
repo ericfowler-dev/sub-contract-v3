@@ -12,6 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
+      <span id="app-version" class="version-chip">v1.1.0</span>
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
@@ -54,7 +55,7 @@
       <div id="filter-vendors" class="multi-select-container"></div>
     </div>
     <div class="filter-group">
-      <label>Transaction Types</label>
+      <label>Cost Types</label>
       <div id="filter-types" class="checkbox-group"></div>
     </div>
     <button id="btn-apply-filters" class="btn btn-primary">Apply Filters</button>
@@ -69,7 +70,7 @@
       <div class="kpi-sub">PUR-SUB debits</div>
     </div>
     <div class="kpi-card kpi-credit">
-      <div class="kpi-label">Customer Credits</div>
+      <div class="kpi-label">Credits</div>
       <div class="kpi-value" id="kpi-customer-credits">--</div>
       <div class="kpi-sub">MFG-CUS offsets</div>
     </div>
@@ -104,7 +105,7 @@
   <section class="charts-grid">
     <!-- Spend Over Time -->
     <div class="chart-panel chart-wide">
-      <h2>Spend Over Time <span class="chart-subtitle">(monthly spend, cumulative net cost)</span></h2>
+      <h2>Monthly Net vs Net Cost To Date <span class="chart-subtitle">(gross spend, credits, projections, and dynamic averages)</span></h2>
       <div class="chart-container">
         <canvas id="chart-spend-over-time"></canvas>
       </div>
@@ -112,7 +113,7 @@
 
     <!-- Jobsite Breakdown -->
     <div class="chart-panel chart-wide">
-      <h2>Jobsite Breakdown <span class="chart-subtitle">(by net spend)</span></h2>
+      <h2>Jobsite Breakdown <span class="chart-subtitle">(sorted high to low by net cost)</span></h2>
       <div class="chart-container chart-container-tall">
         <canvas id="chart-jobsite-breakdown"></canvas>
       </div>
@@ -244,7 +245,7 @@
 
         <!-- Projected Costs Tab -->
         <div id="tab-projections" class="settings-tab-content">
-          <p class="settings-desc">Add projected sub-contract line items. Each entry shows as a red dashed line (summed by month) on the Spend Over Time chart and is flagged in red across all views.</p>
+          <p class="settings-desc">Projected costs are stored on the server. They stay saved across uploads until you delete or clear them, and only future months are allowed.</p>
           <div class="projection-actions">
             <div class="projection-actions-row">
               <select id="proj-import-mode" class="mapping-input projection-import-mode">
@@ -254,8 +255,10 @@
               <input type="file" id="proj-import-file" class="hidden" accept=".xlsx,.xls,.csv" />
               <button id="btn-import-projections" class="btn btn-secondary btn-sm">Import Projections File</button>
               <button id="btn-export-projections-csv" class="btn btn-secondary btn-sm">Export Projections CSV</button>
+              <button id="btn-clear-projections" class="btn btn-secondary btn-sm">Clear All</button>
             </div>
             <p class="projection-help">Backup format: use the exported projections CSV. Import accepts `.xlsx`, `.xls`, or `.csv` with columns like Month, Base Job, Vendor, Description, Invoice Number, PO Number, Type, and Amount.</p>
+            <p id="projection-window-note" class="projection-help"></p>
           </div>
 
           <!-- Add new projection form -->
@@ -298,8 +301,8 @@
               <div class="proj-field proj-field-compact">
                 <label>Type</label>
                 <select id="proj-type" class="mapping-input">
-                  <option value="PUR-SUB">PUR-SUB</option>
-                  <option value="STK-MTL">STK-MTL</option>
+                  <option value="PUR-SUB">Gross Spend (PUR-SUB)</option>
+                  <option value="STK-MTL">Stock Material (STK-MTL)</option>
                 </select>
               </div>
               <div class="proj-field proj-field-action">
@@ -323,7 +326,7 @@
                   <th>PO</th>
                   <th>Type</th>
                   <th class="num">Amount</th>
-                  <th style="width:50px"></th>
+                  <th style="width:72px"></th>
                 </tr>
               </thead>
               <tbody id="projections-body"></tbody>

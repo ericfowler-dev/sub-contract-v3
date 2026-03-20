@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
 const path = require('path');
+const packageJson = require('../../package.json');
 const { loadDb, saveDb } = require('../services/db');
 const {
   computeSummary,
@@ -16,6 +17,10 @@ const {
   parseProjectionImportFile,
   buildProjectionCsv,
   createProjectionImportKey,
+  getLatestActualMonth,
+  getProjectionStartMonth,
+  isProjectionMonthAllowed,
+  pruneStaleProjections,
 } = require('../services/projections');
 
 const router = express.Router();
@@ -125,26 +130,37 @@ function createProjectionRecord(input = {}) {
   };
 }
 
+function syncValidProjections(req, db) {
+  const projectionState = pruneStaleProjections(db.projections || [], db.transactions || []);
+  if (projectionState.removed) {
+    db.projections = projectionState.projections;
+    saveDb(req.app.locals.dataDir, db);
+  }
+  return projectionState;
+}
+
 // GET /api/summary
 router.get('/summary', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
+  const { projections } = syncValidProjections(req, db);
   const filters = getFilters(req.query);
   const filtered = applyFilters(db.transactions, filters);
-  const projections = applyProjectionFilters(db.projections || [], filters);
-  res.json(computeSummary(filtered, db.jobsiteMapping, projections));
+  const filteredProjections = applyProjectionFilters(projections, filters);
+  res.json(computeSummary(filtered, db.jobsiteMapping, filteredProjections));
 });
 
 // GET /api/spend-over-time
 router.get('/spend-over-time', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
+  const { projections } = syncValidProjections(req, db);
   const filters = getFilters(req.query);
   const filtered = applyFilters(db.transactions, filters);
   const actuals = computeSpendOverTime(filtered);
-  const projections = applyProjectionFilters(db.projections || [], filters);
+  const filteredProjections = applyProjectionFilters(projections, filters);
 
   // Aggregate projected line items by month
   const projByMonth = {};
-  for (const p of projections) {
+  for (const p of filteredProjections) {
     if (!p.month || !p.amount) continue;
     if (!projByMonth[p.month]) projByMonth[p.month] = 0;
     projByMonth[p.month] += p.amount;
@@ -231,6 +247,8 @@ router.get('/transactions', (req, res) => {
 router.get('/filter-options', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const txns = db.transactions;
+  const latestActualMonth = getLatestActualMonth(txns);
+  const projectionStartMonth = getProjectionStartMonth(txns);
 
   const jobsites = [...new Set(txns.map(t => t.baseJob))].sort().map(j => ({
     value: j,
@@ -254,6 +272,8 @@ router.get('/filter-options', (req, res) => {
       min: dates[0] || null,
       max: dates[dates.length - 1] || null,
     },
+    latestActualMonth,
+    projectionStartMonth,
   });
 });
 
@@ -278,14 +298,16 @@ router.put('/jobsite-mapping', (req, res) => {
 // GET /api/projections
 router.get('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
-  res.json((db.projections || []).map(normalizeProjection));
+  const { projections } = syncValidProjections(req, db);
+  res.json(projections.map(normalizeProjection));
 });
 
 // GET /api/projections/export
 router.get('/projections/export', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
-  const projections = (db.projections || []).map(normalizeProjection);
-  const csv = buildProjectionCsv(projections, db.jobsiteMapping);
+  const { projections } = syncValidProjections(req, db);
+  const normalized = projections.map(normalizeProjection);
+  const csv = buildProjectionCsv(normalized, db.jobsiteMapping);
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=projected-costs-export.csv');
@@ -309,6 +331,8 @@ router.post('/projections/import', (req, res) => {
       const mode = req.body.mode === 'replace' ? 'replace' : 'append';
       const db = loadDb(req.app.locals.dataDir);
       if (!Array.isArray(db.projections)) db.projections = [];
+      const projectionState = syncValidProjections(req, db);
+      const projectionStartMonth = projectionState.projectionStartMonth;
 
       const parsed = parseProjectionImportFile(uploadedPath, db.jobsiteMapping);
       if (!parsed.rows.length && !parsed.errors.length) {
@@ -320,10 +344,12 @@ router.post('/projections/import', (req, res) => {
         });
       }
 
-      const importedItems = parsed.rows.map(createProjectionRecord);
+      const eligibleRows = parsed.rows.filter((row) => isProjectionMonthAllowed(row.month, db.transactions));
+      const rowsSkippedPastMonths = parsed.rows.length - eligibleRows.length;
+      const importedItems = eligibleRows.map(createProjectionRecord);
 
       let rowsAdded = 0;
-      let rowsSkipped = 0;
+      let rowsSkippedDuplicates = 0;
 
       if (mode === 'replace') {
         db.projections = importedItems;
@@ -333,7 +359,7 @@ router.post('/projections/import', (req, res) => {
         for (const item of importedItems) {
           const key = createProjectionImportKey(item);
           if (existingKeys.has(key)) {
-            rowsSkipped++;
+            rowsSkippedDuplicates++;
             continue;
           }
           db.projections.push(item);
@@ -350,8 +376,11 @@ router.post('/projections/import', (req, res) => {
         fileName: req.file.originalname,
         rowsParsed: parsed.rows.length,
         rowsAdded,
-        rowsSkipped,
+        rowsSkipped: rowsSkippedDuplicates + rowsSkippedPastMonths,
+        rowsSkippedDuplicates,
+        rowsSkippedPastMonths,
         totalRows: db.projections.length,
+        projectionStartMonth,
       });
     } catch (err) {
       console.error('Projection import error:', err);
@@ -369,8 +398,16 @@ router.post('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   if (!Array.isArray(db.projections)) db.projections = [];
   const p = sanitizeProjectionInput(req.body);
+  const projectionStartMonth = getProjectionStartMonth(db.transactions);
   if (!/^\d{4}-\d{2}$/.test(p.month || '')) {
     return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
+  }
+  if (!isProjectionMonthAllowed(p.month, db.transactions)) {
+    return res.status(400).json({
+      error: projectionStartMonth
+        ? `Projected month must be ${projectionStartMonth} or later.`
+        : 'Projected month must be in YYYY-MM format.',
+    });
   }
   if (!(p.amount > 0)) {
     return res.status(400).json({ error: 'Amount must be greater than zero.' });
@@ -388,6 +425,15 @@ router.put('/projections/:id', (req, res) => {
   const idx = db.projections.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Projection not found' });
   const updates = sanitizeProjectionInput(req.body);
+  const nextProjection = { ...db.projections[idx], ...updates };
+  const projectionStartMonth = getProjectionStartMonth(db.transactions);
+  if (!isProjectionMonthAllowed(nextProjection.month, db.transactions)) {
+    return res.status(400).json({
+      error: projectionStartMonth
+        ? `Projected month must be ${projectionStartMonth} or later.`
+        : 'Projected month must be in YYYY-MM format.',
+    });
+  }
   Object.assign(db.projections[idx], updates);
   // Recalculate year/monthNum if month changed
   if (updates.month) {
@@ -396,6 +442,16 @@ router.put('/projections/:id', (req, res) => {
   }
   saveDb(req.app.locals.dataDir, db);
   res.json({ success: true, projection: normalizeProjection(db.projections[idx]) });
+});
+
+// DELETE /api/projections - clear all projected line items
+router.delete('/projections', (req, res) => {
+  const db = loadDb(req.app.locals.dataDir);
+  if (!Array.isArray(db.projections)) db.projections = [];
+  const removed = db.projections.length;
+  db.projections = [];
+  saveDb(req.app.locals.dataDir, db);
+  res.json({ success: true, removed });
 });
 
 // DELETE /api/projections/:id
@@ -410,7 +466,14 @@ router.delete('/projections/:id', (req, res) => {
 // GET /api/metadata
 router.get('/metadata', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
-  res.json(db.metadata);
+  const projectionState = syncValidProjections(req, db);
+  res.json({
+    ...db.metadata,
+    appVersion: packageJson.version,
+    latestActualMonth: getLatestActualMonth(db.transactions),
+    projectionStartMonth: projectionState.projectionStartMonth,
+    totalProjections: projectionState.projections.length,
+  });
 });
 
 // GET /api/export
