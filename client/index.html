@@ -12,7 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
-      <span id="app-version" class="version-chip">v1.1.0</span>
+      <span id="app-version" class="version-chip">v1.2.0</span>
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
@@ -28,6 +28,7 @@
       <label>Quick Filters</label>
       <div class="quick-filters">
         <button class="btn btn-sm quick-filter" data-range="ytd">YTD</button>
+        <button class="btn btn-sm quick-filter" data-range="lastYear">Last Year</button>
         <button class="btn btn-sm quick-filter" data-range="last12">Last 12 Mo</button>
         <button class="btn btn-sm quick-filter" data-range="last6">Last 6 Mo</button>
         <button class="btn btn-sm quick-filter" data-range="last3">Last 3 Mo</button>
@@ -85,16 +86,6 @@
       <div class="kpi-sub">After all offsets</div>
     </div>
     <div class="kpi-card kpi-info">
-      <div class="kpi-label">Active Jobsites</div>
-      <div class="kpi-value" id="kpi-active-jobsites">--</div>
-      <div class="kpi-sub">Last 90 days</div>
-    </div>
-    <div class="kpi-card kpi-info">
-      <div class="kpi-label">Active Vendors</div>
-      <div class="kpi-value" id="kpi-active-vendors">--</div>
-      <div class="kpi-sub">Last 90 days</div>
-    </div>
-    <div class="kpi-card kpi-info">
       <div class="kpi-label">Date Range</div>
       <div class="kpi-value kpi-value-sm" id="kpi-date-range">--</div>
       <div class="kpi-sub" id="kpi-total-rows">0 transactions</div>
@@ -106,7 +97,7 @@
     <!-- Spend Over Time -->
     <div class="chart-panel chart-wide">
       <h2>Monthly Net vs Net Cost To Date <span class="chart-subtitle">(gross spend, credits, projections, and dynamic averages)</span></h2>
-      <div class="chart-container">
+      <div class="chart-container chart-container-spend">
         <canvas id="chart-spend-over-time"></canvas>
       </div>
     </div>
@@ -245,7 +236,8 @@
 
         <!-- Projected Costs Tab -->
         <div id="tab-projections" class="settings-tab-content">
-          <p class="settings-desc">Projected costs are stored on the server. They stay saved across uploads until you delete or clear them, and only future months are allowed.</p>
+          <p class="settings-desc">Projected costs are stored on the server. Each entry shows on the Monthly Net vs Net Cost To Date chart, stays saved across uploads, and only future months are allowed.</p>
+          <p class="settings-desc">Projected costs are stored on the server. Each entry shows on the Monthly Net vs Net Cost To Date chart, stays saved across uploads, and only future months are allowed.</p>
           <div class="projection-actions">
             <div class="projection-actions-row">
               <select id="proj-import-mode" class="mapping-input projection-import-mode">
@@ -306,7 +298,10 @@
                 </select>
               </div>
               <div class="proj-field proj-field-action">
-                <button id="btn-add-projection" class="btn btn-primary btn-sm btn-full">Add</button>
+                <div class="proj-form-actions">
+                  <button id="btn-add-projection" class="btn btn-primary btn-sm btn-full">Add</button>
+                  <button id="btn-cancel-projection-edit" class="btn btn-secondary btn-sm btn-full hidden">Cancel Edit</button>
+                </div>
               </div>
             </div>
           </div>
@@ -326,7 +321,7 @@
                   <th>PO</th>
                   <th>Type</th>
                   <th class="num">Amount</th>
-                  <th style="width:72px"></th>
+                  <th style="width:120px">Actions</th>
                 </tr>
               </thead>
               <tbody id="projections-body"></tbody>

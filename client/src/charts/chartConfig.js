@@ -53,10 +53,19 @@ function buildFlatLineData(length, value) {
   return Array.from({ length }, () => value);
 }
 
-function pickDatasetColor(dataset) {
-  if (typeof dataset.borderColor === 'string') return dataset.borderColor;
-  if (typeof dataset.backgroundColor === 'string') return dataset.backgroundColor;
-  return '#ffffff';
+function colorValue(color) {
+  return Array.isArray(color) ? color[0] : color;
+}
+
+function lastNumericIndex(values = []) {
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (typeof values[i] === 'number' && Number.isFinite(values[i])) return i;
+  }
+  return -1;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function drawRoundedRect(ctx, x, y, width, height, radius) {
@@ -73,102 +82,99 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-const endValueLabelsPlugin = {
-  id: 'endValueLabels',
-  afterDatasetsDraw(chart) {
-    const { ctx, chartArea } = chart;
-    if (!chartArea) return;
+const spendOverTimeEndLabels = {
+  id: 'spendOverTimeEndLabels',
+  afterDatasetsDraw(chart, _args, options) {
+    if (!options?.enabled || !chart.chartArea) return;
 
-    const items = [];
+    const { ctx, chartArea } = chart;
+    const labels = [];
 
     chart.data.datasets.forEach((dataset, datasetIndex) => {
-      if (!dataset.endLabel || chart.isDatasetVisible(datasetIndex) === false) return;
+      const endLabel = dataset.endLabel;
+      if (!endLabel) return;
 
       const meta = chart.getDatasetMeta(datasetIndex);
-      if (!meta?.data?.length) return;
+      if (!meta || meta.hidden) return;
 
-      let pointIndex = -1;
-      for (let index = dataset.data.length - 1; index >= 0; index--) {
-        const value = dataset.data[index];
-        if (value === null || value === undefined) continue;
-        if (!meta.data[index]) continue;
-        pointIndex = index;
-        break;
-      }
+      const pointIndex = lastNumericIndex(dataset.data);
+      if (pointIndex === -1 || !meta.data?.[pointIndex]) return;
 
-      if (pointIndex === -1) return;
-
-      const point = meta.data[pointIndex];
       const value = dataset.data[pointIndex];
-      const text = typeof dataset.endLabel === 'function'
-        ? dataset.endLabel(value, dataset, pointIndex)
-        : dataset.endLabel;
+      const text = typeof endLabel?.text === 'function'
+        ? endLabel.text(value, dataset, chart)
+        : `${dataset.label} ${Fmt.currency(value)}`;
 
       if (!text) return;
 
-      items.push({
-        color: pickDatasetColor(dataset),
+      labels.push({
+        color: endLabel.color || colorValue(dataset.borderColor || dataset.backgroundColor || COLORS.gray),
         text,
-        x: chartArea.right - 6,
-        y: point.y,
+        x: meta.data[pointIndex].x,
+        y: meta.data[pointIndex].y,
       });
     });
 
-    if (!items.length) return;
+    if (!labels.length) return;
 
+    labels.sort((a, b) => a.y - b.y);
+
+    const labelHeight = 24;
+    const minGap = labelHeight + 4;
+    const minY = chartArea.top + labelHeight / 2;
+    const maxY = chartArea.bottom - labelHeight / 2;
+
+    labels[0].y = clamp(labels[0].y, minY, maxY);
+    for (let i = 1; i < labels.length; i++) {
+      labels[i].y = Math.max(labels[i].y, labels[i - 1].y + minGap);
+    }
+    if (labels[labels.length - 1].y > maxY) {
+      labels[labels.length - 1].y = maxY;
+      for (let i = labels.length - 2; i >= 0; i--) {
+        labels[i].y = Math.min(labels[i].y, labels[i + 1].y - minGap);
+      }
+      labels[0].y = clamp(labels[0].y, minY, maxY);
+    }
+
+    const labelStartX = chartArea.right + 16;
+    const connectorEndX = labelStartX - 8;
     ctx.save();
-    ctx.font = '600 11px Inter, sans-serif';
+    ctx.font = `600 12px ${Chart.defaults.font.family}`;
+    ctx.textBaseline = 'middle';
 
-    const paddingX = 8;
-    const boxHeight = 20;
-    const minGap = 6;
+    labels.forEach((label) => {
+      const textWidth = ctx.measureText(label.text).width;
+      const boxWidth = textWidth + 18;
+      const boxX = labelStartX;
+      const boxY = label.y - labelHeight / 2;
 
-    items.sort((a, b) => a.y - b.y);
-    for (let index = 1; index < items.length; index++) {
-      const previous = items[index - 1];
-      if (items[index].y - previous.y < boxHeight + minGap) {
-        items[index].y = previous.y + boxHeight + minGap;
-      }
-    }
+      ctx.beginPath();
+      ctx.strokeStyle = label.color;
+      ctx.lineWidth = 1.25;
+      ctx.moveTo(Math.min(label.x + 10, connectorEndX - 8), label.y);
+      ctx.lineTo(connectorEndX, label.y);
+      ctx.stroke();
 
-    for (let index = items.length - 2; index >= 0; index--) {
-      const next = items[index + 1];
-      if (next.y > chartArea.bottom - boxHeight / 2) {
-        next.y = chartArea.bottom - boxHeight / 2;
-      }
-      if (next.y - items[index].y < boxHeight + minGap) {
-        items[index].y = next.y - boxHeight - minGap;
-      }
-    }
-
-    items.forEach((item) => {
-      item.y = Math.max(chartArea.top + boxHeight / 2, Math.min(chartArea.bottom - boxHeight / 2, item.y));
-      const textWidth = ctx.measureText(item.text).width;
-      const boxWidth = textWidth + paddingX * 2;
-      const boxX = item.x - boxWidth;
-      const boxY = item.y - boxHeight / 2;
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
-      ctx.strokeStyle = item.color;
-      ctx.lineWidth = 1;
-      drawRoundedRect(ctx, boxX, boxY, boxWidth, boxHeight, 8);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+      ctx.strokeStyle = label.color;
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, boxX, boxY, boxWidth, labelHeight, 8);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = item.color;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(item.text, boxX + paddingX, item.y + 0.5);
+      ctx.fillStyle = label.color;
+      ctx.fillText(label.text, boxX + 9, label.y);
     });
 
     ctx.restore();
   },
 };
 
-Chart.register(endValueLabelsPlugin);
+Chart.register(spendOverTimeEndLabels);
 
 const ChartConfigs = {
   spendOverTime(data) {
-    const hasProjections = data.some((row) => row.projected !== null);
+    const isCompact = window.innerWidth <= 900;
     const activeRows = getActiveRows(data);
     const activeMonthCount = activeRows.length || data.length || 1;
     const avgGrossSpend = Math.round((sumValues(activeRows, 'grossSpend') / activeMonthCount) * 100) / 100;
@@ -176,13 +182,111 @@ const ChartConfigs = {
 
     const datasets = [
       {
+        label: 'Net Cost To Date',
+        data: data.map((row) => row.cumulativeNet),
+        type: 'line',
+        yAxisID: 'yCumulative',
+        borderColor: COLORS.net,
+        backgroundColor: 'transparent',
+        borderWidth: 3,
+        pointRadius: 4,
+        pointHoverRadius: 5,
+        pointBackgroundColor: COLORS.net,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2,
+        tension: 0.24,
+        order: 0,
+        endLabel: {
+          color: COLORS.net,
+          text: (value) => `Net To Date ${Fmt.currency(value ?? 0)}`,
+        },
+      },
+      {
+        label: 'Avg Gross Spend / Active Month',
+        data: buildFlatLineData(data.length, avgGrossSpend),
+        type: 'line',
+        yAxisID: 'yMonthly',
+        borderColor: COLORS.avgGross,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [9, 4],
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        tension: 0,
+        order: 1,
+        endLabel: {
+          color: COLORS.avgGross,
+          text: () => `Avg Gross ${Fmt.currency(avgGrossSpend)}`,
+        },
+      },
+      {
+        label: 'Avg Net / Active Month',
+        data: buildFlatLineData(data.length, avgMonthlyNet),
+        type: 'line',
+        yAxisID: 'yMonthly',
+        borderColor: COLORS.avgNet,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [4, 4],
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        tension: 0,
+        order: 2,
+        endLabel: {
+          color: COLORS.avgNet,
+          text: () => `Avg Net ${Fmt.currency(avgMonthlyNet)}`,
+        },
+      },
+      {
+        label: 'Monthly Net',
+        data: data.map((row) => row.monthlyNet),
+        type: 'line',
+        yAxisID: 'yMonthly',
+        borderColor: COLORS.monthlyNet,
+        backgroundColor: 'transparent',
+        borderWidth: 2.5,
+        borderDash: [6, 4],
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: COLORS.monthlyNet,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+        tension: 0.24,
+        order: 3,
+        endLabel: {
+          color: COLORS.monthlyNet,
+          text: (value) => `Latest Monthly Net ${Fmt.currency(value ?? 0)}`,
+        },
+      },
+    ];
+
+    if (data.some((row) => row.projected !== null)) {
+      datasets.push({
+        label: 'Projected Cost',
+        data: data.map((row) => row.projected),
+        backgroundColor: 'rgba(239, 68, 68, 0.84)',
+        borderColor: COLORS.danger,
+        borderWidth: 1,
+        borderRadius: 4,
+        maxBarThickness: 26,
+        categoryPercentage: 0.72,
+        barPercentage: 0.82,
+        yAxisID: 'yMonthly',
+        order: 6,
+      });
+    }
+
+    datasets.push(
+      {
         label: 'Gross Spend',
         data: data.map((row) => row.grossSpend),
         backgroundColor: COLORS.primary,
         borderRadius: 4,
         maxBarThickness: 26,
-        yAxisID: 'y',
-        order: 5,
+        categoryPercentage: 0.72,
+        barPercentage: 0.82,
+        yAxisID: 'yMonthly',
+        order: 7,
       },
       {
         label: 'Credits',
@@ -190,82 +294,12 @@ const ChartConfigs = {
         backgroundColor: COLORS.credit,
         borderRadius: 4,
         maxBarThickness: 26,
-        yAxisID: 'y',
-        order: 5,
+        categoryPercentage: 0.72,
+        barPercentage: 0.82,
+        yAxisID: 'yMonthly',
+        order: 8,
       },
-      {
-        label: 'Monthly Net',
-        data: data.map((row) => row.monthlyNet),
-        type: 'line',
-        borderColor: COLORS.monthlyNet,
-        backgroundColor: 'rgba(234, 88, 12, 0.12)',
-        borderWidth: 2.5,
-        borderDash: [6, 4],
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        pointBackgroundColor: COLORS.monthlyNet,
-        tension: 0.24,
-        yAxisID: 'y',
-        order: 2,
-        endLabel: (value) => `Latest Monthly Net ${Fmt.currency(value ?? 0)}`,
-      },
-      {
-        label: 'Avg Gross Spend / Active Month',
-        data: buildFlatLineData(data.length, avgGrossSpend),
-        type: 'line',
-        borderColor: COLORS.avgGross,
-        borderWidth: 2,
-        borderDash: [9, 4],
-        pointRadius: 0,
-        tension: 0,
-        yAxisID: 'y',
-        order: 1,
-        endLabel: () => `Avg Gross ${Fmt.currency(avgGrossSpend)}`,
-      },
-      {
-        label: 'Avg Net / Active Month',
-        data: buildFlatLineData(data.length, avgMonthlyNet),
-        type: 'line',
-        borderColor: COLORS.avgNet,
-        borderWidth: 2,
-        borderDash: [4, 4],
-        pointRadius: 0,
-        tension: 0,
-        yAxisID: 'y',
-        order: 1,
-        endLabel: () => `Avg Net ${Fmt.currency(avgMonthlyNet)}`,
-      },
-      {
-        label: 'Net Cost To Date',
-        data: data.map((row) => row.cumulativeNet),
-        type: 'line',
-        borderColor: COLORS.net,
-        backgroundColor: 'transparent',
-        borderWidth: 3,
-        pointRadius: 4,
-        pointHoverRadius: 5,
-        pointBackgroundColor: COLORS.net,
-        tension: 0.18,
-        yAxisID: 'y1',
-        order: 0,
-        endLabel: (value) => `Net To Date ${Fmt.currency(value ?? 0)}`,
-      },
-    ];
-
-    if (hasProjections) {
-      datasets.splice(2, 0, {
-        label: 'Projected Cost',
-        data: data.map((row) => row.projected),
-        backgroundColor: 'rgba(239, 68, 68, 0.84)',
-        borderColor: COLORS.danger,
-        borderWidth: 2,
-        borderDash: [6, 3],
-        borderRadius: 4,
-        maxBarThickness: 26,
-        yAxisID: 'y',
-        order: 4,
-      });
-    }
+    );
 
     return {
       type: 'bar',
@@ -277,8 +311,17 @@ const ChartConfigs = {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        layout: { padding: { right: 144 } },
+        layout: {
+          padding: {
+            right: isCompact ? 24 : 220,
+            top: 8,
+          },
+        },
         plugins: {
+          legend: {
+            position: 'top',
+            align: 'center',
+          },
           tooltip: {
             callbacks: {
               label: (ctx) => {
@@ -290,15 +333,18 @@ const ChartConfigs = {
                 if (index === undefined) return '';
                 const row = data[index];
                 return [
-                  `Monthly Net: ${Fmt.currency(row.monthlyNet)}`,
-                  `Net To Date: ${Fmt.currency(row.cumulativeNet)}`,
-                ];
+                  `Actual Net: ${Fmt.currency(row.net)}`,
+                  `Net Cost To Date: ${Fmt.currency(row.cumulativeNet)}`,
+                ].join('\n');
               },
             },
           },
+          spendOverTimeEndLabels: {
+            enabled: !isCompact,
+          },
         },
         scales: {
-          y: {
+          yMonthly: {
             position: 'left',
             ticks: { callback: (value) => Fmt.currency(value) },
             grid: { color: COLORS.gridLine },
@@ -307,7 +353,7 @@ const ChartConfigs = {
               text: 'Monthly Values',
             },
           },
-          y1: {
+          yCumulative: {
             position: 'right',
             ticks: { callback: (value) => Fmt.currency(value) },
             grid: { drawOnChartArea: false },
@@ -317,7 +363,14 @@ const ChartConfigs = {
             },
           },
           x: {
+            offset: true,
             grid: { display: false },
+            ticks: {
+              autoSkip: isCompact,
+              maxTicksLimit: isCompact ? 6 : undefined,
+              maxRotation: 0,
+              padding: 10,
+            },
           },
         },
       },

@@ -252,6 +252,7 @@ body {
 .quick-filters {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .quick-filter {
@@ -422,6 +423,10 @@ body {
 .chart-container {
   position: relative;
   height: 350px;
+}
+
+.chart-container-spend {
+  height: 500px;
 }
 
 .chart-container-tall {
@@ -617,8 +622,18 @@ body {
 }
 
 .proj-field-action {
-  flex: 0 0 100px;
+  flex: 0 1 220px;
   align-self: flex-end;
+}
+
+.proj-form-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.proj-form-actions .btn {
+  flex: 1 1 0;
 }
 
 .projection-description-cell {
@@ -636,6 +651,15 @@ body {
   padding: 12px 0;
   font-size: 13px;
   color: #991b1b;
+}
+
+.row-projected.row-editing {
+  box-shadow: inset 4px 0 0 var(--warning);
+  background: #fff7ed;
+}
+
+.projection-actions-cell {
+  white-space: nowrap;
 }
 
 /* Pagination */
@@ -1137,12 +1161,16 @@ body {
   .kpi-value { font-size: 20px; }
   .btn-exclude-rock { min-width: 100%; }
   .table-actions { width: 100%; justify-content: flex-start; }
+  .chart-container-spend { height: 420px; }
   .proj-field,
   .proj-field-description,
   .proj-field-ref,
   .proj-field-compact,
   .proj-field-action {
     flex: 1 1 100%;
+  }
+  .proj-form-actions {
+    flex-direction: column;
   }
   .projection-import-mode {
     max-width: none;

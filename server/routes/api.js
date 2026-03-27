@@ -249,20 +249,33 @@ router.get('/filter-options', (req, res) => {
   const txns = db.transactions;
   const latestActualMonth = getLatestActualMonth(txns);
   const projectionStartMonth = getProjectionStartMonth(txns);
+  const projections = Array.isArray(db.projections) ? db.projections : [];
 
-  const jobsites = [...new Set(txns.map(t => t.baseJob))].sort().map(j => ({
+  const jobsites = [...new Set([
+    ...txns.map(t => t.baseJob),
+    ...projections.map(p => p.baseJob).filter(Boolean),
+  ])].sort().map(j => ({
     value: j,
     label: db.jobsiteMapping[j] || j,
   }));
 
-  const vendors = [...new Set(txns.map(t => t.vendorName))].sort().map(v => ({
+  const vendors = [...new Set([
+    ...txns.map(t => t.vendorName),
+    ...projections.map(p => cleanText(p.vendorName)).filter(Boolean),
+  ])].sort().map(v => ({
     value: v,
     label: v,
   }));
 
-  const types = [...new Set(txns.map(t => t.type))].sort();
+  const types = [...new Set([
+    ...txns.map(t => t.type),
+    ...projections.map(p => cleanText(p.type)).filter(Boolean),
+  ])].sort();
 
-  const dates = txns.map(t => t.date).filter(Boolean).sort();
+  const dates = [
+    ...txns.map(t => t.date).filter(Boolean),
+    ...projections.map(p => p.month ? `${p.month}-01` : '').filter(Boolean),
+  ].sort();
 
   res.json({
     jobsites,
@@ -425,6 +438,12 @@ router.put('/projections/:id', (req, res) => {
   const idx = db.projections.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Projection not found' });
   const updates = sanitizeProjectionInput(req.body);
+  if (Object.prototype.hasOwnProperty.call(updates, 'month') && updates.month && !/^\d{4}-\d{2}$/.test(updates.month)) {
+    return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'amount') && !(updates.amount > 0)) {
+    return res.status(400).json({ error: 'Amount must be greater than zero.' });
+  }
   const nextProjection = { ...db.projections[idx], ...updates };
   const projectionStartMonth = getProjectionStartMonth(db.transactions);
   if (!isProjectionMonthAllowed(nextProjection.month, db.transactions)) {

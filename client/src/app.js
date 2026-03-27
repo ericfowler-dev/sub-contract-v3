@@ -9,7 +9,8 @@ const App = {
   currentPage: 1,
   jobsiteMapping: {},
   metadata: null,
-  projections: {},
+  projections: [],
+  editingProjectionId: null,
   uploadState: { selectedFile: null },
   reportRoot: null,
 
@@ -92,6 +93,7 @@ const App = {
     document.getElementById('proj-import-file').addEventListener('change', () => this.importProjectionsFile());
     document.getElementById('btn-export-projections-csv').addEventListener('click', () => this.exportProjectionsCSV());
     document.getElementById('btn-clear-projections').addEventListener('click', () => this.clearAllProjections());
+    document.getElementById('btn-cancel-projection-edit').addEventListener('click', () => this.cancelProjectionEdit());
   },
 
   // -- API Helpers --
@@ -208,7 +210,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.1.0';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.2.0';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -220,8 +222,6 @@ const App = {
     document.getElementById('kpi-customer-credits').textContent = Fmt.currency(data.totalCustomerCredits);
     document.getElementById('kpi-accounting-adj').textContent = Fmt.currency(data.totalAccountingAdj);
     document.getElementById('kpi-net-cost').textContent = Fmt.currency(data.netCostToPSI);
-    document.getElementById('kpi-active-jobsites').textContent = data.activeJobsites;
-    document.getElementById('kpi-active-vendors').textContent = data.activeVendors;
 
     const dateRange = document.getElementById('kpi-date-range');
     if (data.dateRange.start && data.dateRange.end) {
@@ -511,6 +511,9 @@ const App = {
     if (range === 'ytd') {
       startDate = `${currentYear}-01`;
       endDate = `${currentYear}-${currentMonth}`;
+    } else if (range === 'lastYear') {
+      startDate = `${currentYear - 1}-01`;
+      endDate = `${currentYear - 1}-12`;
     } else if (range === 'last12') {
       const d = new Date(now);
       d.setMonth(d.getMonth() - 11);
@@ -861,6 +864,145 @@ const App = {
   },
 
   // -- Projections --
+  getProjectionFormContext() {
+    const vendorSelect = document.getElementById('proj-vendor');
+    const selectedVendor = vendorSelect?.value && vendorSelect.value !== '__custom__'
+      ? this.normalizeProjectionVendorName(vendorSelect.value)
+      : '';
+
+    return {
+      month: document.getElementById('proj-month')?.value || '',
+      baseJob: document.getElementById('proj-jobsite')?.value || '',
+      vendorName: selectedVendor,
+    };
+  },
+
+  normalizeProjectionVendorName(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ');
+  },
+
+  getProjectionVendorChoices(currentVendor = '') {
+    const choices = new Map();
+    const addVendor = (vendorName) => {
+      const normalized = this.normalizeProjectionVendorName(vendorName);
+      if (!normalized || normalized === 'Internal / Non-Vendor') return;
+      const key = normalized.toLowerCase();
+      if (!choices.has(key)) choices.set(key, normalized);
+    };
+
+    (this.filterOptions?.vendors || []).forEach(v => addVendor(v.value || v.label));
+    (Array.isArray(this.projections) ? this.projections : []).forEach(p => addVendor(p.vendorName));
+    addVendor(currentVendor);
+
+    return [...choices.values()].sort((a, b) => a.localeCompare(b));
+  },
+
+  syncProjectionFormState() {
+    const submitBtn = document.getElementById('btn-add-projection');
+    const cancelBtn = document.getElementById('btn-cancel-projection-edit');
+
+    if (submitBtn) {
+      submitBtn.textContent = this.editingProjectionId ? 'Save Changes' : 'Add';
+    }
+    if (cancelBtn) {
+      cancelBtn.classList.toggle('hidden', !this.editingProjectionId);
+    }
+  },
+
+  resetProjectionForm({ preserveContext = true } = {}) {
+    const context = preserveContext ? this.getProjectionFormContext() : { month: '', baseJob: '', vendorName: '' };
+
+    this.editingProjectionId = null;
+
+    const monthInput = document.getElementById('proj-month');
+    const jobsiteSelect = document.getElementById('proj-jobsite');
+    const vendorSelect = document.getElementById('proj-vendor');
+    const descriptionInput = document.getElementById('proj-description');
+    const invoiceInput = document.getElementById('proj-invoice');
+    const poInput = document.getElementById('proj-po');
+    const amountInput = document.getElementById('proj-amount');
+    const typeSelect = document.getElementById('proj-type');
+
+    if (monthInput) monthInput.value = context.month || '';
+    if (descriptionInput) descriptionInput.value = '';
+    if (invoiceInput) invoiceInput.value = '';
+    if (poInput) poInput.value = '';
+    if (amountInput) amountInput.value = '';
+    if (typeSelect) typeSelect.value = 'PUR-SUB';
+
+    this.populateProjectionDropdowns();
+
+    if (jobsiteSelect) jobsiteSelect.value = context.baseJob || '';
+    if (vendorSelect) vendorSelect.value = context.vendorName || '';
+
+    this.syncProjectionFormState();
+  },
+
+  beginProjectionEdit(projectionId) {
+    const projection = (Array.isArray(this.projections) ? this.projections : []).find(p => p.id === projectionId);
+    if (!projection) return;
+
+    this.editingProjectionId = projectionId;
+
+    document.getElementById('proj-month').value = projection.month || '';
+    document.getElementById('proj-description').value = projection.description || '';
+    document.getElementById('proj-invoice').value = projection.invoiceNumber || '';
+    document.getElementById('proj-po').value = projection.poNumber || '';
+    document.getElementById('proj-amount').value = projection.amount || '';
+    document.getElementById('proj-type').value = projection.type || 'PUR-SUB';
+
+    this.populateProjectionDropdowns();
+    document.getElementById('proj-jobsite').value = projection.baseJob || '';
+    document.getElementById('proj-vendor').value = this.normalizeProjectionVendorName(projection.vendorName) || '';
+
+    this.syncProjectionFormState();
+    this.renderProjectionsTableState();
+    this.setProjectionStatus(`Editing ${Fmt.monthLabel(projection.month)} projected cost.`, 'saving');
+    document.getElementById('proj-description')?.focus();
+  },
+
+  cancelProjectionEdit() {
+    this.resetProjectionForm();
+    this.renderProjectionsTableState();
+    this.setProjectionStatus('Edit canceled.', '', 1500);
+  },
+
+  renderProjectionsTableState() {
+    document.querySelectorAll('#projections-body tr[data-projection-id]').forEach(row => {
+      row.classList.toggle('row-editing', Boolean(this.editingProjectionId && row.dataset.projectionId === this.editingProjectionId));
+    });
+  },
+
+  getProjectionFormPayload() {
+    const month = document.getElementById('proj-month').value;
+    const baseJob = document.getElementById('proj-jobsite').value;
+    const vendorValue = document.getElementById('proj-vendor').value;
+    const vendorName = vendorValue === '__custom__' ? '' : this.normalizeProjectionVendorName(vendorValue);
+    const description = document.getElementById('proj-description').value.trim();
+    const invoiceNumber = document.getElementById('proj-invoice').value.trim();
+    const poNumber = document.getElementById('proj-po').value.trim();
+    const amount = parseFloat(document.getElementById('proj-amount').value);
+    const type = document.getElementById('proj-type').value;
+
+    if (!month) {
+      alert('Please select a month.');
+      return null;
+    }
+    if (!(amount > 0)) {
+      alert('Please enter a valid amount.');
+      return null;
+    }
+
+    return { month, baseJob, vendorName, description, invoiceNumber, poNumber, amount, type };
+  },
+
+  async refreshAfterProjectionChange() {
+    await this.loadFilterOptions();
+    await this.loadMetadata();
+    await this.refresh();
+    await this.renderProjections();
+  },
+
   async renderProjections() {
     try {
       this.projections = await (await fetch('/api/projections')).json();
@@ -877,6 +1019,10 @@ const App = {
     const totalDiv = document.getElementById('projections-total');
     const items = Array.isArray(this.projections) ? this.projections : [];
 
+    if (this.editingProjectionId && !items.some(item => item.id === this.editingProjectionId)) {
+      this.editingProjectionId = null;
+    }
+
     if (!items.length) {
       tbody.innerHTML = '';
       emptyMsg.style.display = 'block';
@@ -885,7 +1031,7 @@ const App = {
       emptyMsg.style.display = 'none';
       const sorted = [...items].sort((a, b) => (a.month || '').localeCompare(b.month || ''));
       tbody.innerHTML = sorted.map(p => `
-        <tr class="row-projected">
+        <tr class="row-projected${this.editingProjectionId === p.id ? ' row-editing' : ''}" data-projection-id="${p.id}">
           <td>${Fmt.monthLabel(p.month)}</td>
           <td>${this.escapeHtml(this.jobsiteMapping[p.baseJob] || p.baseJob || '--')}</td>
           <td title="${this.escapeHtml(p.vendorName || '--')}">${this.escapeHtml(Fmt.truncate(p.vendorName || '--', 25))}</td>
@@ -894,7 +1040,10 @@ const App = {
           <td class="projection-ref-cell">${this.escapeHtml(p.poNumber || '--')}</td>
           <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type || 'PUR-SUB'))}</span></td>
           <td class="num">${Fmt.currency(p.amount)}</td>
-          <td style="text-align:center"><button class="btn btn-sm btn-ghost projection-remove" data-id="${p.id}">Delete</button></td>
+          <td class="projection-actions-cell">
+            <button class="btn btn-sm btn-secondary projection-edit" data-id="${p.id}">Edit</button>
+            <button class="btn btn-sm btn-ghost projection-remove" data-id="${p.id}">Delete</button>
+          </td>
         </tr>
       `).join('');
 
@@ -906,13 +1055,27 @@ const App = {
       totalDiv.innerHTML = `<strong>Total Projected:</strong> ${Fmt.currency(total)} across ${items.length} line items, ${monthCount} months`;
     }
 
+    tbody.querySelectorAll('.projection-edit').forEach(btn => {
+      btn.addEventListener('click', () => this.beginProjectionEdit(btn.dataset.id));
+    });
+
     // Bind remove buttons
     tbody.querySelectorAll('.projection-remove').forEach(btn => {
       btn.addEventListener('click', async () => {
-        await fetch(`/api/projections/${btn.dataset.id}`, { method: 'DELETE' });
-        await this.loadMetadata();
-        await this.renderProjections();
-        await this.refresh();
+        try {
+          const res = await fetch(`/api/projections/${btn.dataset.id}`, { method: 'DELETE' });
+          if (!res.ok) {
+            throw new Error('Delete request failed.');
+          }
+          if (this.editingProjectionId === btn.dataset.id) {
+            this.resetProjectionForm();
+          }
+          this.setProjectionStatus('Deleted', 'saved', 1500);
+          await this.refreshAfterProjectionChange();
+        } catch (err) {
+          console.error('Failed to delete projection:', err);
+          this.setProjectionStatus('Delete failed.', 'error');
+        }
       });
     });
 
@@ -920,8 +1083,11 @@ const App = {
     const addBtn = document.getElementById('btn-add-projection');
     if (!addBtn.dataset.bound) {
       addBtn.dataset.bound = '1';
-      addBtn.addEventListener('click', () => this.addProjection());
+      addBtn.addEventListener('click', () => this.submitProjectionForm());
     }
+
+    this.syncProjectionFormState();
+    this.renderProjectionsTableState();
   },
 
   async clearAllProjections() {
@@ -936,10 +1102,9 @@ const App = {
         throw new Error(data.error || 'Unable to clear projected costs.');
       }
 
+      this.resetProjectionForm({ preserveContext: false });
       this.setProjectionStatus(`Cleared ${data.removed} projected cost${data.removed === 1 ? '' : 's'}.`, 'saved', 3500);
-      await this.loadMetadata();
-      await this.renderProjections();
-      await this.refresh();
+      await this.refreshAfterProjectionChange();
     } catch (err) {
       console.error('Failed to clear projections:', err);
       this.setProjectionStatus(err.message || 'Unable to clear projected costs.', 'error');
@@ -963,18 +1128,14 @@ const App = {
       }
     }
 
-    // Vendors from filter options
-    if (vendorSelect && this.filterOptions) {
+    // Vendors from actuals plus saved projections
+    if (vendorSelect) {
       const currentVendor = vendorSelect.value;
+      const vendors = this.getProjectionVendorChoices(currentVendor);
       vendorSelect.innerHTML = '<option value="">-- Select Vendor --</option>';
-      for (const v of this.filterOptions.vendors) {
-        if (v.value === 'Internal / Non-Vendor') continue;
-        vendorSelect.innerHTML += `<option value="${v.value}">${v.label}</option>`;
+      for (const vendorName of vendors) {
+        vendorSelect.innerHTML += `<option value="${this.escapeHtml(vendorName)}">${this.escapeHtml(vendorName)}</option>`;
       }
-      if (currentVendor && currentVendor !== '__custom__' && ![...vendorSelect.options].some(opt => opt.value === currentVendor)) {
-        vendorSelect.innerHTML += `<option value="${this.escapeHtml(currentVendor)}">${this.escapeHtml(currentVendor)}</option>`;
-      }
-      // Allow custom entry
       vendorSelect.innerHTML += '<option value="__custom__">Other (type name)...</option>';
       if ([...vendorSelect.options].some(opt => opt.value === currentVendor)) {
         vendorSelect.value = currentVendor;
@@ -984,13 +1145,12 @@ const App = {
         vendorSelect.dataset.bound = '1';
         vendorSelect.addEventListener('change', () => {
           if (vendorSelect.value === '__custom__') {
-            const custom = prompt('Enter vendor name:');
-            if (custom) {
-              const opt = document.createElement('option');
-              opt.value = custom;
-              opt.textContent = custom;
-              vendorSelect.insertBefore(opt, vendorSelect.lastElementChild);
-              vendorSelect.value = custom;
+            const customVendor = this.normalizeProjectionVendorName(prompt('Enter vendor name:'));
+            if (customVendor) {
+              const existing = [...vendorSelect.options].find(opt => opt.value.toLowerCase() === customVendor.toLowerCase());
+              vendorSelect.value = existing?.value || customVendor;
+              this.populateProjectionDropdowns();
+              vendorSelect.value = existing?.value || customVendor;
             } else {
               vendorSelect.value = '';
             }
@@ -1029,9 +1189,7 @@ const App = {
       if (data.rowsSkippedPastMonths) skippedParts.push(`${data.rowsSkippedPastMonths} past months`);
       const skippedText = skippedParts.length ? ` Skipped ${skippedParts.join(' and ')}.` : '';
       this.setProjectionStatus(`Imported ${data.rowsAdded} projected costs.${skippedText}`, 'saved', 5000);
-      await this.loadMetadata();
-      await this.refresh();
-      await this.renderProjections();
+      await this.refreshAfterProjectionChange();
     } catch (err) {
       console.error('Failed to import projections:', err);
       this.setProjectionStatus(err.message || 'Projection import failed.', 'error');
@@ -1041,30 +1199,32 @@ const App = {
     }
   },
 
-  async addProjection() {
-    const month = document.getElementById('proj-month').value;
-    const baseJob = document.getElementById('proj-jobsite').value;
-    const vendorName = document.getElementById('proj-vendor').value === '__custom__' ? '' : document.getElementById('proj-vendor').value;
-    const description = document.getElementById('proj-description').value.trim();
-    const invoiceNumber = document.getElementById('proj-invoice').value.trim();
-    const poNumber = document.getElementById('proj-po').value.trim();
-    const amount = parseFloat(document.getElementById('proj-amount').value);
-    const type = document.getElementById('proj-type').value;
+  async submitProjectionForm() {
+    const payload = this.getProjectionFormPayload();
+    if (!payload) return;
 
-    if (!month) { alert('Please select a month.'); return; }
-    if (!amount || amount <= 0) { alert('Please enter a valid amount.'); return; }
-    if (this.metadata?.projectionStartMonth && month < this.metadata.projectionStartMonth) {
-      alert(`Projected month must be ${Fmt.monthLabel(this.metadata.projectionStartMonth)} or later.`);
+    const projectionStartMonth = this.metadata?.projectionStartMonth || this.filterOptions?.projectionStartMonth || '';
+    if (projectionStartMonth && payload.month < projectionStartMonth) {
+      alert(`Projected month must be ${Fmt.monthLabel(projectionStartMonth)} or later.`);
       return;
     }
 
+    if (this.editingProjectionId) {
+      await this.updateProjection(this.editingProjectionId, payload);
+      return;
+    }
+
+    await this.addProjection(payload);
+  },
+
+  async addProjection(payload) {
     this.setProjectionStatus('Adding...', 'saving');
 
     try {
       const res = await fetch('/api/projections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, baseJob, vendorName, description, invoiceNumber, poNumber, amount, type }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -1072,18 +1232,34 @@ const App = {
       }
 
       this.setProjectionStatus('Added', 'saved', 2000);
-      // Clear form fields (keep month and jobsite for quick re-entry)
-      document.getElementById('proj-description').value = '';
-      document.getElementById('proj-invoice').value = '';
-      document.getElementById('proj-po').value = '';
-      document.getElementById('proj-amount').value = '';
-      // Refresh
-      await this.loadMetadata();
-      await this.renderProjections();
-      await this.refresh();
+      this.resetProjectionForm({ preserveContext: true });
+      await this.refreshAfterProjectionChange();
     } catch (err) {
       console.error('Failed to add projection:', err);
       this.setProjectionStatus(err.message || 'Unable to add projected cost.', 'error');
+    }
+  },
+
+  async updateProjection(projectionId, payload) {
+    this.setProjectionStatus('Saving changes...', 'saving');
+
+    try {
+      const res = await fetch(`/api/projections/${projectionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to update projected cost.');
+      }
+
+      this.setProjectionStatus('Updated', 'saved', 2000);
+      this.resetProjectionForm({ preserveContext: true });
+      await this.refreshAfterProjectionChange();
+    } catch (err) {
+      console.error('Failed to update projection:', err);
+      this.setProjectionStatus(err.message || 'Unable to update projected cost.', 'error');
     }
   },
 
@@ -1188,8 +1364,6 @@ const App = {
       { label: 'Credits', value: document.getElementById('kpi-customer-credits').textContent },
       { label: 'Accounting Adjustments', value: document.getElementById('kpi-accounting-adj').textContent },
       { label: 'Net Cost to PSI', value: document.getElementById('kpi-net-cost').textContent },
-      { label: 'Active Jobsites', value: document.getElementById('kpi-active-jobsites').textContent },
-      { label: 'Active Vendors', value: document.getElementById('kpi-active-vendors').textContent },
     ];
   },
 
