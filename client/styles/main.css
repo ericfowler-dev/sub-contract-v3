@@ -156,9 +156,14 @@ body {
 }
 
 .btn-exclude-rock.active {
-  background: #14532d;
-  border-color: #14532d;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+  background: #dc2626;
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.btn-exclude-rock.active:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
 }
 
 .btn-sm { padding: 4px 10px; font-size: 12px; }
@@ -185,6 +190,26 @@ body {
 .filter-group-emphasis {
   flex: 1 1 100%;
   align-items: flex-start;
+}
+
+.exclude-rock-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-note {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .filter-group-date-range {
@@ -473,6 +498,11 @@ body {
   font-size: 13px;
 }
 
+.transaction-table {
+  min-width: 1520px;
+  table-layout: auto;
+}
+
 .data-table th {
   text-align: left;
   padding: 10px 12px;
@@ -483,6 +513,10 @@ body {
   letter-spacing: 0.05em;
   border-bottom: 2px solid var(--border);
   white-space: nowrap;
+  cursor: default;
+}
+
+.data-table th[data-sort] {
   cursor: pointer;
   user-select: none;
 }
@@ -501,15 +535,23 @@ body {
 
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+.transaction-table td {
+  white-space: nowrap;
+}
+
+.transaction-table .description-cell {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .compact td { padding: 6px 10px; font-size: 12px; }
 .compact th { padding: 8px 10px; }
 
 .text-green { color: var(--success); }
 
 .ref-cell {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 300px;
   white-space: nowrap;
 }
 
@@ -669,6 +711,7 @@ body {
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
 .page-info { font-size: 12px; color: var(--text-muted); margin-right: auto; }
@@ -1160,6 +1203,7 @@ body {
   .kpi-cards { grid-template-columns: repeat(2, 1fr); }
   .kpi-value { font-size: 20px; }
   .btn-exclude-rock { min-width: 100%; }
+  .filter-note { width: 100%; }
   .table-actions { width: 100%; justify-content: flex-start; }
   .chart-container-spend { height: 420px; }
   .proj-field,

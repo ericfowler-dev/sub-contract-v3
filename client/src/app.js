@@ -1,5 +1,6 @@
 // PSI Sub-Contract Dashboard - Main App
 const ROCK_ENTERPRISES_VENDOR = 'Rock Enterprises';
+const TRANSACTION_PAGE_SIZE = 1000;
 
 const App = {
   charts: {},
@@ -68,20 +69,6 @@ const App = {
 
     // Upload
     this.initUpload();
-
-    // Data table sorting
-    document.querySelectorAll('#data-table th[data-sort]').forEach(th => {
-      th.addEventListener('click', () => {
-        const field = th.dataset.sort;
-        if (this.currentSort.field === field) {
-          this.currentSort.dir = this.currentSort.dir === 'asc' ? 'desc' : 'asc';
-        } else {
-          this.currentSort = { field, dir: 'asc' };
-        }
-        this.currentPage = 1;
-        this.loadTransactions();
-      });
-    });
 
     // Export
     document.getElementById('btn-export-csv').addEventListener('click', () => this.exportCSV());
@@ -159,19 +146,17 @@ const App = {
   // -- Data Loading --
   async refresh() {
     try {
-      const [summary, spendTime, jobsites, vendors, typeBreak] = await Promise.all([
+      const [summary, spendTime, jobsites, vendors] = await Promise.all([
         this.api('summary'),
         this.api('spend-over-time'),
         this.api('jobsite-breakdown'),
         this.api('vendor-analysis'),
-        this.api('type-breakdown'),
       ]);
 
       this.renderKPIs(summary);
       this.renderSpendOverTime(spendTime);
       this.renderJobsiteBreakdown(jobsites);
       this.renderVendorAnalysis(vendors);
-      this.renderTypeBreakdown(typeBreak);
       this.loadTransactions();
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -210,7 +195,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.2.0';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.3.0';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -252,19 +237,18 @@ const App = {
 
   renderVendorAnalysis(data) {
     this.destroyChart('vendorPie');
-    const realVendors = data.filter(v => v.vendorName !== 'Internal / Non-Vendor');
-    if (!realVendors.length) return;
-
-    // Pie chart
-    const ctx = document.getElementById('chart-vendor-pie').getContext('2d');
-    this.charts.vendorPie = new Chart(ctx, ChartConfigs.vendorPie(realVendors));
 
     // Vendor table
     const container = document.getElementById('vendor-table-container');
+    if (!data.length) {
+      container.innerHTML = '<div class="empty-state">No vendor data available for the current filters.</div>';
+      return;
+    }
+
     let html = '<table class="data-table compact"><thead><tr><th>Vendor</th><th class="num">Spend</th><th class="num">Invoices</th><th class="num">Avg Size</th><th class="num">Jobs</th></tr></thead><tbody>';
     for (const v of data) {
       html += `<tr>
-        <td>${v.vendorName}</td>
+        <td>${this.escapeHtml(v.vendorName || '--')}</td>
         <td class="num">${Fmt.currency(v.totalSpend)}</td>
         <td class="num">${v.invoiceCount}</td>
         <td class="num">${Fmt.currency(v.avgInvoiceSize)}</td>
@@ -292,8 +276,9 @@ const App = {
   // -- Data Table --
   async loadTransactions() {
     try {
+      this.currentSort = { field: 'date', dir: 'desc' };
       const qs = this.buildQueryString();
-      const sortQs = `sortBy=${this.currentSort.field}&sortDir=${this.currentSort.dir}&page=${this.currentPage}&limit=50`;
+      const sortQs = `sortBy=date&sortDir=desc&page=${this.currentPage}&limit=${TRANSACTION_PAGE_SIZE}`;
       const sep = qs ? '&' : '';
       const url = `/api/transactions?${sortQs}${sep}${qs}`;
       const result = await (await fetch(url)).json();
@@ -308,25 +293,17 @@ const App = {
       tbody.innerHTML = result.data.map(t => `
         <tr>
           <td>${Fmt.date(t.date)}</td>
-          <td>${this.jobsiteMapping[t.baseJob] || t.baseJob}</td>
-          <td>${t.serviceOrder}</td>
-          <td><span class="badge badge-${t.type.toLowerCase()}">${t.category}</span></td>
-          <td>${Fmt.truncate(t.vendorName, 30)}</td>
-          <td>${Fmt.truncate(t.description, 35)}</td>
+          <td>${this.escapeHtml(this.jobsiteMapping[t.baseJob] || t.baseJob || '--')}</td>
+          <td>${this.escapeHtml(t.serviceOrder || '--')}</td>
+          <td><span class="badge badge-${(t.type || '').toLowerCase()}">${this.escapeHtml(t.category || '--')}</span></td>
+          <td>${this.escapeHtml(Fmt.truncate(t.vendorName || '', 30) || '--')}</td>
+          <td class="description-cell" title="${this.escapeHtml(t.description || '')}">${this.escapeHtml(Fmt.truncate(t.description || '', 55) || '--')}</td>
           <td class="num">${t.debit ? Fmt.currencyFull(t.debit) : ''}</td>
           <td class="num">${t.credit ? Fmt.currencyFull(t.credit) : ''}</td>
           <td class="num ${t.net < 0 ? 'text-green' : ''}">${Fmt.currencyFull(t.net)}</td>
-          <td class="ref-cell" title="${t.ref || ''}">${Fmt.truncate(t.ref, 25)}</td>
+          <td class="ref-cell" title="${this.escapeHtml(t.ref || '')}">${this.escapeHtml(t.ref || '')}</td>
         </tr>
       `).join('');
-
-      // Update sort indicators
-      document.querySelectorAll('#data-table th[data-sort]').forEach(th => {
-        th.classList.remove('sort-asc', 'sort-desc');
-        if (th.dataset.sort === this.currentSort.field) {
-          th.classList.add(this.currentSort.dir === 'asc' ? 'sort-asc' : 'sort-desc');
-        }
-      });
 
       // Pagination
       this.renderPagination(result);
@@ -337,11 +314,14 @@ const App = {
 
   renderPagination(result) {
     const container = document.getElementById('pagination-controls');
+    const rangeStart = result.total ? ((result.page - 1) * result.limit) + 1 : 0;
+    const rangeEnd = Math.min(result.page * result.limit, result.total);
+
     if (result.totalPages <= 1) {
-      container.innerHTML = `<span class="page-info">Showing all ${result.total} transactions</span>`;
+      container.innerHTML = `<span class="page-info">Showing ${Fmt.number(rangeStart)}-${Fmt.number(rangeEnd)} of ${Fmt.number(result.total)} transactions</span>`;
       return;
     }
-    let html = `<span class="page-info">Page ${result.page} of ${result.totalPages} (${result.total} total)</span>`;
+    let html = `<span class="page-info">Showing ${Fmt.number(rangeStart)}-${Fmt.number(rangeEnd)} of ${Fmt.number(result.total)} transactions</span>`;
     html += `<button class="btn btn-sm" ${result.page <= 1 ? 'disabled' : ''} onclick="App.goToPage(${result.page - 1})">Prev</button>`;
     html += `<button class="btn btn-sm" ${result.page >= result.totalPages ? 'disabled' : ''} onclick="App.goToPage(${result.page + 1})">Next</button>`;
     container.innerHTML = html;
@@ -445,9 +425,11 @@ const App = {
 
   updateRockExclusionButton() {
     const button = document.getElementById('btn-exclude-rock');
+    const note = document.getElementById('exclude-rock-note');
     if (!button) return;
     button.classList.toggle('active', Boolean(this.filters.excludeRock));
     button.setAttribute('aria-pressed', this.filters.excludeRock ? 'true' : 'false');
+    if (note) note.classList.toggle('hidden', !this.filters.excludeRock);
   },
 
   applyFilterStateToControls() {
@@ -1383,7 +1365,7 @@ const App = {
 
   async fetchAllFilteredTransactions() {
     const qs = this.buildQueryString();
-    const sortQs = `sortBy=${this.currentSort.field}&sortDir=${this.currentSort.dir}&page=1&limit=1000000`;
+    const sortQs = 'sortBy=date&sortDir=desc&page=1&limit=1000000';
     const sep = qs ? '&' : '';
     const url = `/api/transactions?${sortQs}${sep}${qs}`;
     const result = await (await fetch(url)).json();
@@ -1449,8 +1431,6 @@ const App = {
 
     const spendChart = this.canvasToImageDataUrl('chart-spend-over-time');
     const jobsiteChart = this.canvasToImageDataUrl('chart-jobsite-breakdown');
-    const vendorChart = this.canvasToImageDataUrl('chart-vendor-pie');
-    const typeChart = this.canvasToImageDataUrl('chart-type-breakdown');
     const vendorTableHtml = document.getElementById('vendor-table-container').innerHTML || '<div class="report-empty">No vendor data available.</div>';
 
     return `
@@ -1478,19 +1458,9 @@ const App = {
               ${jobsiteChart ? `<img src="${jobsiteChart}" alt="Jobsite Breakdown chart" />` : '<div class="report-empty">No chart data available.</div>'}
             </section>
 
-            <section class="report-card">
-              <h2>Vendor Share of Spend</h2>
-              ${vendorChart ? `<img src="${vendorChart}" alt="Vendor Share chart" />` : '<div class="report-empty">No chart data available.</div>'}
-            </section>
-
-            <section class="report-card">
+            <section class="report-card-wide">
               <h2>Vendor Details</h2>
               <div class="table-scroll">${vendorTableHtml}</div>
-            </section>
-
-            <section class="report-card-wide">
-              <h2>Transaction Type Breakdown</h2>
-              ${typeChart ? `<img src="${typeChart}" alt="Transaction Type Breakdown chart" />` : '<div class="report-empty">No chart data available.</div>'}
             </section>
 
             ${includeTransactions ? `

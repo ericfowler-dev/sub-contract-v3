@@ -12,7 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
-      <span id="app-version" class="version-chip">v1.2.0</span>
+      <span id="app-version" class="version-chip">v1.3.0</span>
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
@@ -49,7 +49,10 @@
     </div>
     <div class="filter-group filter-group-emphasis">
       <label>Vendor Exclusion</label>
-      <button id="btn-exclude-rock" class="btn btn-exclude-rock">EXCLUDE PDX EXHAUST STACK RUST</button>
+      <div class="exclude-rock-row">
+        <button id="btn-exclude-rock" class="btn btn-exclude-rock">EXCLUDE PDX EXHAUST STACK RUST</button>
+        <span id="exclude-rock-note" class="filter-note hidden">Recoverable costs are excluded when this filter is active.</span>
+      </div>
     </div>
     <div class="filter-group">
       <label>Vendors</label>
@@ -110,26 +113,10 @@
       </div>
     </div>
 
-    <!-- Vendor Analysis -->
-    <div class="chart-panel">
-      <h2>Vendor Share of Spend</h2>
-      <div class="chart-container">
-        <canvas id="chart-vendor-pie"></canvas>
-      </div>
-    </div>
-
     <!-- Vendor Table -->
-    <div class="chart-panel">
+    <div class="chart-panel chart-wide">
       <h2>Vendor Details</h2>
       <div class="table-scroll" id="vendor-table-container"></div>
-    </div>
-
-    <!-- Type Breakdown -->
-    <div class="chart-panel chart-wide">
-      <h2>Transaction Type Breakdown</h2>
-      <div class="chart-container">
-        <canvas id="chart-type-breakdown"></canvas>
-      </div>
     </div>
   </section>
 
@@ -144,18 +131,18 @@
       </div>
     </div>
     <div class="table-scroll">
-      <table id="data-table" class="data-table">
+      <table id="data-table" class="data-table transaction-table">
         <thead>
           <tr>
-            <th data-sort="date">Date</th>
-            <th data-sort="baseJob">Jobsite</th>
-            <th data-sort="serviceOrder">Service Order</th>
-            <th data-sort="category">Category</th>
-            <th data-sort="vendorName">Vendor</th>
-            <th data-sort="description">Description</th>
-            <th data-sort="debit" class="num">Debit</th>
-            <th data-sort="credit" class="num">Credit</th>
-            <th data-sort="net" class="num">Net</th>
+            <th>Date</th>
+            <th>Jobsite</th>
+            <th>Service Order</th>
+            <th>Category</th>
+            <th>Vendor</th>
+            <th>Description</th>
+            <th class="num">Debit</th>
+            <th class="num">Credit</th>
+            <th class="num">Net</th>
             <th>Ref</th>
           </tr>
         </thead>

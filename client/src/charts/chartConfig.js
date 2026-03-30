@@ -177,7 +177,9 @@ const ChartConfigs = {
     const isCompact = window.innerWidth <= 900;
     const activeRows = getActiveRows(data);
     const activeMonthCount = activeRows.length || data.length || 1;
-    const avgGrossSpend = Math.round((sumValues(activeRows, 'grossSpend') / activeMonthCount) * 100) / 100;
+    const avgGrossSpend = Math.round((activeRows.reduce((total, row) => (
+      total + (Number(row.grossSpend) || 0) + (Number(row.projected) || 0)
+    ), 0) / activeMonthCount) * 100) / 100;
     const avgMonthlyNet = Math.round((sumValues(activeRows, 'monthlyNet') / activeMonthCount) * 100) / 100;
 
     const datasets = [
@@ -202,7 +204,7 @@ const ChartConfigs = {
         },
       },
       {
-        label: 'Avg Gross Spend / Active Month',
+        label: 'Avg Gross + Proj / Active Month',
         data: buildFlatLineData(data.length, avgGrossSpend),
         type: 'line',
         yAxisID: 'yMonthly',
@@ -216,7 +218,7 @@ const ChartConfigs = {
         order: 1,
         endLabel: {
           color: COLORS.avgGross,
-          text: () => `Avg Gross ${Fmt.currency(avgGrossSpend)}`,
+          text: () => `Avg Gross + Proj ${Fmt.currency(avgGrossSpend)}`,
         },
       },
       {
