@@ -106,22 +106,8 @@ function getLatestActualMonth(transactions = []) {
   return months[months.length - 1] || null;
 }
 
-function getCurrentCalendarMonth() {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    year: 'numeric',
-    month: '2-digit',
-  });
-  const parts = formatter.formatToParts(new Date());
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  return year && month ? `${year}-${month}` : null;
-}
-
 function getProjectionStartMonth(transactions = []) {
-  const latestActualMonth = getLatestActualMonth(transactions);
-  const currentCalendarMonth = getCurrentCalendarMonth();
-  return [currentCalendarMonth, latestActualMonth].filter(Boolean).sort().pop() || null;
+  return getLatestActualMonth(transactions);
 }
 
 function isProjectionMonthAllowed(monthValue, transactions = []) {

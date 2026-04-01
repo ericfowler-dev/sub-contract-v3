@@ -12,7 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
-      <span id="app-version" class="version-chip">v1.3.0</span>
+      <span id="app-version" class="version-chip">v1.4.0</span>
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
@@ -99,28 +99,63 @@
   <section class="charts-grid">
     <!-- Spend Over Time -->
     <div class="chart-panel chart-wide">
-      <h2>Monthly Net vs Net Cost To Date <span class="chart-subtitle">(gross spend, credits, projections, and dynamic averages)</span></h2>
+      <div class="chart-panel-header">
+        <h2>Monthly Net vs Net Cost To Date <span class="chart-subtitle">(gross spend, credits, projections, and monthly average)</span></h2>
+        <div class="chart-filter-callout">
+          <span class="chart-filter-label">Legend Filter</span>
+          <span class="chart-filter-text">Click any legend item to hide or restore that series.</span>
+        </div>
+      </div>
       <div class="chart-container chart-container-spend">
         <canvas id="chart-spend-over-time"></canvas>
       </div>
     </div>
 
     <!-- Jobsite Breakdown -->
-    <div class="chart-panel chart-wide">
-      <h2>Jobsite Breakdown <span class="chart-subtitle">(sorted high to low by net cost)</span></h2>
-      <div class="chart-container chart-container-tall">
+    <div class="chart-panel">
+      <h2>Jobsite Breakdown <span class="chart-subtitle">(top 10, sorted high to low by net cost)</span></h2>
+      <div class="chart-container chart-container-breakdown">
         <canvas id="chart-jobsite-breakdown"></canvas>
       </div>
     </div>
 
     <!-- Vendor Table -->
-    <div class="chart-panel chart-wide">
+    <div class="chart-panel">
       <h2>Vendor Details</h2>
       <div class="table-scroll" id="vendor-table-container"></div>
     </div>
   </section>
 
   <!-- Data Table -->
+  <section class="data-table-section">
+    <div class="data-table-header">
+      <div class="data-table-heading">
+        <h2>Projected Costs Data</h2>
+        <div id="projected-data-summary" class="table-summary"></div>
+      </div>
+      <div class="table-actions">
+        <button id="btn-export-projected-data-csv" class="btn btn-secondary">Export CSV</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table id="projected-data-table" class="data-table transaction-table projected-table">
+        <thead>
+          <tr>
+            <th data-sort="month">Month</th>
+            <th data-sort="jobsite">Jobsite</th>
+            <th data-sort="vendor">Vendor</th>
+            <th data-sort="description">Description</th>
+            <th data-sort="invoice">Invoice</th>
+            <th data-sort="po">PO</th>
+            <th data-sort="type">Type</th>
+            <th class="num" data-sort="amount">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="projected-data-table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="data-table-section">
     <div class="data-table-header">
       <h2>Transaction Data</h2>
@@ -134,16 +169,16 @@
       <table id="data-table" class="data-table transaction-table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Jobsite</th>
-            <th>Service Order</th>
-            <th>Category</th>
-            <th>Vendor</th>
-            <th>Description</th>
-            <th class="num">Debit</th>
-            <th class="num">Credit</th>
-            <th class="num">Net</th>
-            <th>Ref</th>
+            <th data-sort="date">Date</th>
+            <th data-sort="jobsite">Jobsite</th>
+            <th data-sort="serviceOrder">Service Order</th>
+            <th data-sort="category">Category</th>
+            <th data-sort="vendor">Vendor</th>
+            <th data-sort="description">Description</th>
+            <th class="num" data-sort="debit">Debit</th>
+            <th class="num" data-sort="credit">Credit</th>
+            <th class="num" data-sort="net">Net</th>
+            <th data-sort="ref">Ref</th>
           </tr>
         </thead>
         <tbody id="data-table-body"></tbody>
@@ -212,9 +247,9 @@
           <table class="settings-table">
             <thead>
               <tr>
-                <th style="width:110px">Job Number</th>
-                <th>Site Name</th>
-                <th style="width:70px">Status</th>
+                <th style="width:110px" data-sort="job">Job Number</th>
+                <th data-sort="name">Site Name</th>
+                <th style="width:70px" data-sort="status">Status</th>
               </tr>
             </thead>
             <tbody id="settings-mapping-body"></tbody>
@@ -223,8 +258,7 @@
 
         <!-- Projected Costs Tab -->
         <div id="tab-projections" class="settings-tab-content">
-          <p class="settings-desc">Projected costs are stored on the server. Each entry shows on the Monthly Net vs Net Cost To Date chart, stays saved across uploads, and only future months are allowed.</p>
-          <p class="settings-desc">Projected costs are stored on the server. Each entry shows on the Monthly Net vs Net Cost To Date chart, stays saved across uploads, and only future months are allowed.</p>
+          <p class="settings-desc">Projected costs are stored on the server. Each entry shows on the Monthly Net vs Net Cost To Date chart, stays saved across uploads, and can be added for the latest actual month or later.</p>
           <div class="projection-actions">
             <div class="projection-actions-row">
               <select id="proj-import-mode" class="mapping-input projection-import-mode">
@@ -300,14 +334,14 @@
             <table class="data-table compact">
               <thead>
                 <tr>
-                  <th>Month</th>
-                  <th>Jobsite</th>
-                  <th>Vendor</th>
-                  <th>Description</th>
-                  <th>Invoice</th>
-                  <th>PO</th>
-                  <th>Type</th>
-                  <th class="num">Amount</th>
+                  <th data-sort="month">Month</th>
+                  <th data-sort="jobsite">Jobsite</th>
+                  <th data-sort="vendor">Vendor</th>
+                  <th data-sort="description">Description</th>
+                  <th data-sort="invoice">Invoice</th>
+                  <th data-sort="po">PO</th>
+                  <th data-sort="type">Type</th>
+                  <th class="num" data-sort="amount">Amount</th>
                   <th style="width:120px">Actions</th>
                 </tr>
               </thead>

@@ -33,22 +33,6 @@ function sumValues(rows, key) {
   return rows.reduce((total, row) => total + (Number(row?.[key]) || 0), 0);
 }
 
-function getActiveRows(rows) {
-  return rows.filter((row) => {
-    const values = [
-      row.grossSpend,
-      row.customerCredits,
-      row.accountingAdj,
-      row.stockMaterial,
-      row.purchaseAdj,
-      row.projected,
-      row.monthlyNet,
-      row.cumulativeNet,
-    ];
-    return values.some((value) => Math.abs(Number(value) || 0) > 0.004);
-  });
-}
-
 function buildFlatLineData(length, value) {
   return Array.from({ length }, () => value);
 }
@@ -175,12 +159,10 @@ Chart.register(spendOverTimeEndLabels);
 const ChartConfigs = {
   spendOverTime(data) {
     const isCompact = window.innerWidth <= 900;
-    const activeRows = getActiveRows(data);
-    const activeMonthCount = activeRows.length || data.length || 1;
-    const avgGrossSpend = Math.round((activeRows.reduce((total, row) => (
+    const displayMonthCount = data.length || 1;
+    const avgGrossSpend = Math.round((data.reduce((total, row) => (
       total + (Number(row.grossSpend) || 0) + (Number(row.projected) || 0)
-    ), 0) / activeMonthCount) * 100) / 100;
-    const avgMonthlyNet = Math.round((sumValues(activeRows, 'monthlyNet') / activeMonthCount) * 100) / 100;
+    ), 0) / displayMonthCount) * 100) / 100;
 
     const datasets = [
       {
@@ -204,7 +186,7 @@ const ChartConfigs = {
         },
       },
       {
-        label: 'Avg Gross + Proj / Active Month',
+        label: 'Avg. Gross + Proj / month',
         data: buildFlatLineData(data.length, avgGrossSpend),
         type: 'line',
         yAxisID: 'yMonthly',
@@ -222,24 +204,6 @@ const ChartConfigs = {
         },
       },
       {
-        label: 'Avg Net / Active Month',
-        data: buildFlatLineData(data.length, avgMonthlyNet),
-        type: 'line',
-        yAxisID: 'yMonthly',
-        borderColor: COLORS.avgNet,
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderDash: [4, 4],
-        pointRadius: 0,
-        pointHoverRadius: 0,
-        tension: 0,
-        order: 2,
-        endLabel: {
-          color: COLORS.avgNet,
-          text: () => `Avg Net ${Fmt.currency(avgMonthlyNet)}`,
-        },
-      },
-      {
         label: 'Monthly Net',
         data: data.map((row) => row.monthlyNet),
         type: 'line',
@@ -254,7 +218,7 @@ const ChartConfigs = {
         pointBorderColor: '#ffffff',
         pointBorderWidth: 1.5,
         tension: 0.24,
-        order: 3,
+        order: 2,
         endLabel: {
           color: COLORS.monthlyNet,
           text: (value) => `Latest Monthly Net ${Fmt.currency(value ?? 0)}`,
@@ -323,6 +287,12 @@ const ChartConfigs = {
           legend: {
             position: 'top',
             align: 'center',
+            onHover: (_event, _legendItem, legend) => {
+              if (legend?.chart?.canvas) legend.chart.canvas.style.cursor = 'pointer';
+            },
+            onLeave: (_event, _legendItem, legend) => {
+              if (legend?.chart?.canvas) legend.chart.canvas.style.cursor = 'default';
+            },
           },
           tooltip: {
             callbacks: {

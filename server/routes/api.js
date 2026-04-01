@@ -55,6 +55,46 @@ function cleanText(value) {
   return String(value ?? '').trim();
 }
 
+function compareSortValues(a, b, dir = 1) {
+  const isNumeric = typeof a === 'number' || typeof b === 'number';
+  if (isNumeric) {
+    const aNum = Number(a) || 0;
+    const bNum = Number(b) || 0;
+    if (aNum === bNum) return 0;
+    return aNum < bNum ? -1 * dir : 1 * dir;
+  }
+
+  const aText = cleanText(a).toLowerCase();
+  const bText = cleanText(b).toLowerCase();
+  return aText.localeCompare(bText, undefined, { numeric: true, sensitivity: 'base' }) * dir;
+}
+
+function getTransactionSortValue(transaction, sortBy, jobsiteMapping = {}) {
+  switch (sortBy) {
+    case 'jobsite':
+      return cleanText(jobsiteMapping[transaction.baseJob] || transaction.baseJob);
+    case 'serviceOrder':
+      return cleanText(transaction.serviceOrder);
+    case 'category':
+      return cleanText(transaction.category);
+    case 'vendor':
+      return cleanText(transaction.vendorName);
+    case 'description':
+      return cleanText(transaction.description);
+    case 'debit':
+      return Number(transaction.debit) || 0;
+    case 'credit':
+      return Number(transaction.credit) || 0;
+    case 'net':
+      return Number(transaction.net) || 0;
+    case 'ref':
+      return cleanText(transaction.ref);
+    case 'date':
+    default:
+      return cleanText(transaction.date);
+  }
+}
+
 function extractProjectionReferences(description) {
   const source = cleanText(description);
   const invoiceMatch = source.match(/\b(?:inv(?:oice)?\.?\s*#?\s*:?\s*)([A-Za-z0-9-]+)/i);
@@ -227,11 +267,9 @@ router.get('/transactions', (req, res) => {
   const sortBy = req.query.sortBy || 'date';
   const sortDir = req.query.sortDir === 'asc' ? 1 : -1;
   const sorted = [...filtered].sort((a, b) => {
-    const aVal = a[sortBy];
-    const bVal = b[sortBy];
-    if (aVal < bVal) return -1 * sortDir;
-    if (aVal > bVal) return 1 * sortDir;
-    return 0;
+    const aVal = getTransactionSortValue(a, sortBy, db.jobsiteMapping);
+    const bVal = getTransactionSortValue(b, sortBy, db.jobsiteMapping);
+    return compareSortValues(aVal, bVal, sortDir);
   });
 
   res.json({
@@ -312,14 +350,16 @@ router.put('/jobsite-mapping', (req, res) => {
 router.get('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const { projections } = syncValidProjections(req, db);
-  res.json(projections.map(normalizeProjection));
+  const filteredProjections = applyProjectionFilters(projections, getFilters(req.query));
+  res.json(filteredProjections.map(normalizeProjection));
 });
 
 // GET /api/projections/export
 router.get('/projections/export', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const { projections } = syncValidProjections(req, db);
-  const normalized = projections.map(normalizeProjection);
+  const filteredProjections = applyProjectionFilters(projections, getFilters(req.query));
+  const normalized = filteredProjections.map(normalizeProjection);
   const csv = buildProjectionCsv(normalized, db.jobsiteMapping);
 
   res.setHeader('Content-Type', 'text/csv');

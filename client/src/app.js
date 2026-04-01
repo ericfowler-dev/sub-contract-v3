@@ -7,10 +7,18 @@ const App = {
   filters: {},
   filterOptions: null,
   currentSort: { field: 'date', dir: 'desc' },
+  tableSorts: {
+    projectedData: { field: 'month', dir: 'asc' },
+    vendorDetails: { field: 'totalSpend', dir: 'desc' },
+    projectionSettings: { field: 'month', dir: 'asc' },
+    jobsiteMapping: { field: 'job', dir: 'asc' },
+  },
   currentPage: 1,
   jobsiteMapping: {},
   metadata: null,
   projections: [],
+  filteredProjections: [],
+  vendorAnalysisData: [],
   editingProjectionId: null,
   uploadState: { selectedFile: null },
   reportRoot: null,
@@ -79,8 +87,162 @@ const App = {
     });
     document.getElementById('proj-import-file').addEventListener('change', () => this.importProjectionsFile());
     document.getElementById('btn-export-projections-csv').addEventListener('click', () => this.exportProjectionsCSV());
+    document.getElementById('btn-export-projected-data-csv').addEventListener('click', () => this.exportProjectionsCSV(true));
     document.getElementById('btn-clear-projections').addEventListener('click', () => this.clearAllProjections());
     document.getElementById('btn-cancel-projection-edit').addEventListener('click', () => this.cancelProjectionEdit());
+
+    this.bindSortableHeaders('#data-table', 'transactions');
+    this.bindSortableHeaders('#projected-data-table', 'projectedData');
+    this.bindSortableHeaders('#tab-projections .data-table.compact', 'projectionSettings');
+    this.bindSortableHeaders('#tab-mapping .settings-table', 'jobsiteMapping');
+  },
+
+  resolveTableElement(target) {
+    if (!target) return null;
+    return typeof target === 'string' ? document.querySelector(target) : target;
+  },
+
+  getSortState(tableKey) {
+    return tableKey === 'transactions' ? this.currentSort : this.tableSorts[tableKey];
+  },
+
+  getDefaultSortDirection(field) {
+    return ['date', 'debit', 'credit', 'net', 'amount', 'totalSpend', 'invoiceCount', 'avgInvoiceSize', 'jobCount'].includes(field)
+      ? 'desc'
+      : 'asc';
+  },
+
+  bindSortableHeaders(tableTarget, tableKey) {
+    const table = this.resolveTableElement(tableTarget);
+    if (!table) return;
+
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      if (th.dataset.sortBound === '1') return;
+      th.dataset.sortBound = '1';
+      th.addEventListener('click', () => this.toggleTableSort(tableKey, th.dataset.sort));
+    });
+
+    this.updateSortHeaderClasses(table, this.getSortState(tableKey));
+  },
+
+  updateSortHeaderClasses(tableTarget, sortState) {
+    const table = this.resolveTableElement(tableTarget);
+    if (!table || !sortState) return;
+
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === sortState.field) {
+        th.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    });
+  },
+
+  toggleTableSort(tableKey, field) {
+    const current = this.getSortState(tableKey) || { field: '', dir: 'asc' };
+    const dir = current.field === field
+      ? (current.dir === 'asc' ? 'desc' : 'asc')
+      : this.getDefaultSortDirection(field);
+
+    if (tableKey === 'transactions') {
+      this.currentSort = { field, dir };
+      this.currentPage = 1;
+      this.loadTransactions();
+      return;
+    }
+
+    this.tableSorts[tableKey] = { field, dir };
+
+    if (tableKey === 'projectedData') {
+      this.loadProjectedCosts();
+      return;
+    }
+    if (tableKey === 'vendorDetails') {
+      this.renderVendorAnalysis(this.vendorAnalysisData);
+      return;
+    }
+    if (tableKey === 'projectionSettings') {
+      this.renderProjections();
+      return;
+    }
+    if (tableKey === 'jobsiteMapping') {
+      this.renderSettingsMapping(document.getElementById('settings-search')?.value || '');
+    }
+  },
+
+  sortItems(items, getValue, dir = 'asc') {
+    const factor = dir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const aVal = getValue(a);
+      const bVal = getValue(b);
+      const isNumeric = typeof aVal === 'number' || typeof bVal === 'number';
+
+      if (isNumeric) {
+        const aNum = Number(aVal) || 0;
+        const bNum = Number(bVal) || 0;
+        if (aNum === bNum) return 0;
+        return aNum < bNum ? -1 * factor : 1 * factor;
+      }
+
+      return String(aVal ?? '').localeCompare(String(bVal ?? ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      }) * factor;
+    });
+  },
+
+  getProjectedSortValue(projection, field) {
+    switch (field) {
+      case 'month':
+        return projection.month || '';
+      case 'jobsite':
+        return this.jobsiteMapping[projection.baseJob] || projection.baseJob || '';
+      case 'vendor':
+        return projection.vendorName || '';
+      case 'description':
+        return projection.descriptionDisplay || projection.description || '';
+      case 'invoice':
+        return projection.invoiceNumber || '';
+      case 'po':
+        return projection.poNumber || '';
+      case 'type':
+        return Fmt.typeLabel(projection.type || 'PUR-SUB');
+      case 'amount':
+        return Number(projection.amount) || 0;
+      default:
+        return '';
+    }
+  },
+
+  getVendorSortValue(vendor, field) {
+    switch (field) {
+      case 'vendorName':
+        return vendor.vendorName || '';
+      case 'totalSpend':
+        return Number(vendor.totalSpend) || 0;
+      case 'invoiceCount':
+        return Number(vendor.invoiceCount) || 0;
+      case 'avgInvoiceSize':
+        return Number(vendor.avgInvoiceSize) || 0;
+      case 'jobCount':
+        return Number(vendor.jobCount) || 0;
+      default:
+        return '';
+    }
+  },
+
+  getMappingSortValue([job, name], field) {
+    switch (field) {
+      case 'job':
+        return job || '';
+      case 'name':
+        return name || '';
+      case 'status':
+        if (!name || name.startsWith('Unknown')) return 'Unknown';
+        if (name.includes('Multiple') || name.includes('Review') || name.includes('Ambiguous')) return 'Review';
+        return 'Matched';
+      default:
+        return '';
+    }
   },
 
   // -- API Helpers --
@@ -157,7 +319,10 @@ const App = {
       this.renderSpendOverTime(spendTime);
       this.renderJobsiteBreakdown(jobsites);
       this.renderVendorAnalysis(vendors);
-      this.loadTransactions();
+      await Promise.all([
+        this.loadTransactions(),
+        this.loadProjectedCosts(),
+      ]);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     }
@@ -195,7 +360,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.3.0';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.4.0';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -228,25 +393,29 @@ const App = {
   renderJobsiteBreakdown(data) {
     this.destroyChart('jobsiteBreakdown');
     if (!data.length) return;
+    const topSites = data.slice(0, 10);
     const ctx = document.getElementById('chart-jobsite-breakdown').getContext('2d');
-    // Adjust height based on number of jobsites
     const container = ctx.canvas.parentElement;
-    container.style.height = Math.max(400, data.length * 35) + 'px';
-    this.charts.jobsiteBreakdown = new Chart(ctx, ChartConfigs.jobsiteBreakdown(data));
+    container.style.height = `${Math.max(280, topSites.length * 28 + 40)}px`;
+    this.charts.jobsiteBreakdown = new Chart(ctx, ChartConfigs.jobsiteBreakdown(topSites));
   },
 
   renderVendorAnalysis(data) {
     this.destroyChart('vendorPie');
+    this.vendorAnalysisData = Array.isArray(data) ? data : [];
 
     // Vendor table
     const container = document.getElementById('vendor-table-container');
-    if (!data.length) {
+    if (!this.vendorAnalysisData.length) {
       container.innerHTML = '<div class="empty-state">No vendor data available for the current filters.</div>';
       return;
     }
 
-    let html = '<table class="data-table compact"><thead><tr><th>Vendor</th><th class="num">Spend</th><th class="num">Invoices</th><th class="num">Avg Size</th><th class="num">Jobs</th></tr></thead><tbody>';
-    for (const v of data) {
+    const sortState = this.tableSorts.vendorDetails;
+    const sorted = this.sortItems(this.vendorAnalysisData, item => this.getVendorSortValue(item, sortState.field), sortState.dir);
+
+    let html = '<table class="data-table compact"><thead><tr><th data-sort="vendorName">Vendor</th><th class="num" data-sort="totalSpend">Spend</th><th class="num" data-sort="invoiceCount">Invoices</th><th class="num" data-sort="avgInvoiceSize">Avg Size</th><th class="num" data-sort="jobCount">Jobs</th></tr></thead><tbody>';
+    for (const v of sorted) {
       html += `<tr>
         <td>${this.escapeHtml(v.vendorName || '--')}</td>
         <td class="num">${Fmt.currency(v.totalSpend)}</td>
@@ -257,6 +426,7 @@ const App = {
     }
     html += '</tbody></table>';
     container.innerHTML = html;
+    this.bindSortableHeaders(container.querySelector('table'), 'vendorDetails');
   },
 
   renderTypeBreakdown(data) {
@@ -276,14 +446,16 @@ const App = {
   // -- Data Table --
   async loadTransactions() {
     try {
-      this.currentSort = { field: 'date', dir: 'desc' };
       const qs = this.buildQueryString();
-      const sortQs = `sortBy=date&sortDir=desc&page=${this.currentPage}&limit=${TRANSACTION_PAGE_SIZE}`;
+      const sortField = this.currentSort?.field || 'date';
+      const sortDir = this.currentSort?.dir || 'desc';
+      const sortQs = `sortBy=${encodeURIComponent(sortField)}&sortDir=${encodeURIComponent(sortDir)}&page=${this.currentPage}&limit=${TRANSACTION_PAGE_SIZE}`;
       const sep = qs ? '&' : '';
       const url = `/api/transactions?${sortQs}${sep}${qs}`;
       const result = await (await fetch(url)).json();
 
       const tbody = document.getElementById('data-table-body');
+      this.updateSortHeaderClasses('#data-table', this.currentSort);
       if (!result.data.length) {
         tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No transactions to display. Upload an Excel file to get started.</td></tr>';
         document.getElementById('pagination-controls').innerHTML = '';
@@ -309,6 +481,51 @@ const App = {
       this.renderPagination(result);
     } catch (err) {
       console.error('Failed to load transactions:', err);
+    }
+  },
+
+  async loadProjectedCosts() {
+    const tbody = document.getElementById('projected-data-table-body');
+    const summary = document.getElementById('projected-data-summary');
+    if (!tbody) return;
+
+    try {
+      const result = await this.api('projections');
+      const items = Array.isArray(result) ? result : [];
+      const sortState = this.tableSorts.projectedData;
+      const sorted = this.sortItems(items, item => this.getProjectedSortValue(item, sortState.field), sortState.dir);
+
+      this.filteredProjections = sorted;
+      this.updateSortHeaderClasses('#projected-data-table', sortState);
+
+      if (!sorted.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No projected costs match the current dashboard filters.</td></tr>';
+        if (summary) summary.textContent = '0 projected costs shown';
+        return;
+      }
+
+      tbody.innerHTML = sorted.map(p => `
+        <tr class="row-projected">
+          <td>${Fmt.monthLabel(p.month)}</td>
+          <td title="${this.escapeHtml(p.baseJob || '--')}">${this.escapeHtml(this.jobsiteMapping[p.baseJob] || p.baseJob || '--')}</td>
+          <td title="${this.escapeHtml(p.vendorName || '--')}">${this.escapeHtml(Fmt.truncate(p.vendorName || '--', 30))}</td>
+          <td class="description-cell" title="${this.escapeHtml(p.description || '--')}">${this.escapeHtml(Fmt.truncate(p.descriptionDisplay || p.description || '--', 55))}</td>
+          <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.invoiceNumber || '--')}">${this.escapeHtml(p.invoiceNumber || '--')}</td>
+          <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.poNumber || '--')}">${this.escapeHtml(p.poNumber || '--')}</td>
+          <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type))}</span></td>
+          <td class="num">${Fmt.currencyFull(p.amount)}</td>
+        </tr>
+      `).join('');
+
+      if (summary) {
+        const totalProjectedAmount = sorted.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        summary.textContent = `${Fmt.number(sorted.length)} projected cost${sorted.length === 1 ? '' : 's'} shown | ${Fmt.currencyFull(totalProjectedAmount)} total`;
+      }
+    } catch (err) {
+      this.filteredProjections = [];
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Unable to load projected costs.</td></tr>';
+      if (summary) summary.textContent = '';
+      console.error('Failed to load projected costs:', err);
     }
   },
 
@@ -679,13 +896,15 @@ const App = {
   // -- Settings --
   renderSettingsMapping(filter = '') {
     const tbody = document.getElementById('settings-mapping-body');
-    const entries = Object.entries(this.jobsiteMapping).sort((a, b) => a[0].localeCompare(b[0]));
+    const entries = Object.entries(this.jobsiteMapping);
     const lowerFilter = filter.toLowerCase();
     const filtered = lowerFilter
       ? entries.filter(([job, name]) => job.includes(lowerFilter) || name.toLowerCase().includes(lowerFilter))
       : entries;
+    const sortState = this.tableSorts.jobsiteMapping;
+    const sortedEntries = this.sortItems(filtered, entry => this.getMappingSortValue(entry, sortState.field), sortState.dir);
 
-    tbody.innerHTML = filtered.map(([job, name]) => {
+    tbody.innerHTML = sortedEntries.map(([job, name]) => {
       const status = this.getMappingStatus(name);
       return `
       <tr class="${status.cls}">
@@ -694,6 +913,7 @@ const App = {
         <td class="mapping-status">${status.label}</td>
       </tr>`;
     }).join('');
+    this.updateSortHeaderClasses('#tab-mapping .settings-table', sortState);
 
     // Debounced save on input change
     let saveTimeout;
@@ -833,12 +1053,12 @@ const App = {
     if (!note) return;
 
     if (projectionStartMonth && latestActualMonth) {
-      note.textContent = `Latest actual month: ${Fmt.monthLabel(latestActualMonth)}. New projections must be ${Fmt.monthLabel(projectionStartMonth)} or later.`;
+      note.textContent = `Latest actual month: ${Fmt.monthLabel(latestActualMonth)}. Projections can be added for ${Fmt.monthLabel(projectionStartMonth)} or later.`;
       return;
     }
 
     if (projectionStartMonth) {
-      note.textContent = `New projections must be ${Fmt.monthLabel(projectionStartMonth)} or later.`;
+      note.textContent = `Projections can be added for ${Fmt.monthLabel(projectionStartMonth)} or later.`;
       return;
     }
 
@@ -1000,6 +1220,8 @@ const App = {
     const emptyMsg = document.getElementById('projections-empty');
     const totalDiv = document.getElementById('projections-total');
     const items = Array.isArray(this.projections) ? this.projections : [];
+    const sortState = this.tableSorts.projectionSettings;
+    this.updateSortHeaderClasses('#tab-projections .data-table.compact', sortState);
 
     if (this.editingProjectionId && !items.some(item => item.id === this.editingProjectionId)) {
       this.editingProjectionId = null;
@@ -1011,7 +1233,7 @@ const App = {
       totalDiv.innerHTML = '';
     } else {
       emptyMsg.style.display = 'none';
-      const sorted = [...items].sort((a, b) => (a.month || '').localeCompare(b.month || ''));
+      const sorted = this.sortItems(items, item => this.getProjectedSortValue(item, sortState.field), sortState.dir);
       tbody.innerHTML = sorted.map(p => `
         <tr class="row-projected${this.editingProjectionId === p.id ? ' row-editing' : ''}" data-projection-id="${p.id}">
           <td>${Fmt.monthLabel(p.month)}</td>
@@ -1166,11 +1388,26 @@ const App = {
         throw new Error(data.error || 'Unable to import projected costs.');
       }
 
+      const rowsAddedText = data.rowsAdded === 0
+        ? 'No projected costs were imported.'
+        : `Imported ${data.rowsAdded} projected cost${data.rowsAdded === 1 ? '' : 's'}.`;
       const skippedParts = [];
-      if (data.rowsSkippedDuplicates) skippedParts.push(`${data.rowsSkippedDuplicates} duplicates`);
-      if (data.rowsSkippedPastMonths) skippedParts.push(`${data.rowsSkippedPastMonths} past months`);
+      if (data.rowsSkippedDuplicates) {
+        skippedParts.push(`${data.rowsSkippedDuplicates} duplicate row${data.rowsSkippedDuplicates === 1 ? '' : 's'}`);
+      }
+      if (data.rowsSkippedPastMonths) {
+        const monthLabel = data.projectionStartMonth ? Fmt.monthLabel(data.projectionStartMonth) : '';
+        skippedParts.push(
+          monthLabel
+            ? `${data.rowsSkippedPastMonths} row${data.rowsSkippedPastMonths === 1 ? '' : 's'} before ${monthLabel}`
+            : `${data.rowsSkippedPastMonths} past-month row${data.rowsSkippedPastMonths === 1 ? '' : 's'}`,
+        );
+      }
       const skippedText = skippedParts.length ? ` Skipped ${skippedParts.join(' and ')}.` : '';
-      this.setProjectionStatus(`Imported ${data.rowsAdded} projected costs.${skippedText}`, 'saved', 5000);
+      const guidanceText = data.rowsSkippedPastMonths && data.projectionStartMonth
+        ? ` Only ${Fmt.monthLabel(data.projectionStartMonth)} or later can be imported right now.`
+        : '';
+      this.setProjectionStatus(`${rowsAddedText}${skippedText}${guidanceText}`, 'saved', 7000);
       await this.refreshAfterProjectionChange();
     } catch (err) {
       console.error('Failed to import projections:', err);
@@ -1250,8 +1487,9 @@ const App = {
     window.location.href = `/api/export${qs ? '?' + qs : ''}`;
   },
 
-  exportProjectionsCSV() {
-    window.location.href = '/api/projections/export';
+  exportProjectionsCSV(useCurrentFilters = false) {
+    const qs = useCurrentFilters ? this.buildQueryString() : '';
+    window.location.href = `/api/projections/export${qs ? '?' + qs : ''}`;
   },
 
   async copyShareLink() {
@@ -1372,6 +1610,11 @@ const App = {
     return result.data || [];
   },
 
+  async fetchFilteredProjections() {
+    const result = await this.api('projections');
+    return Array.isArray(result) ? result : [];
+  },
+
   buildTransactionsReportTable(transactions) {
     if (!transactions.length) {
       return '<div class="report-empty">No transactions match the current filters.</div>';
@@ -1413,7 +1656,44 @@ const App = {
     `;
   },
 
-  buildReportMarkup({ includeTransactions = false, transactions = [] } = {}) {
+  buildProjectionsReportTable(projections) {
+    if (!projections.length) {
+      return '<div class="report-empty">No projected costs match the current filters.</div>';
+    }
+
+    const rows = projections.map(p => `
+      <tr>
+        <td>${Fmt.monthLabel(p.month)}</td>
+        <td>${this.escapeHtml(this.jobsiteMapping[p.baseJob] || p.baseJob || '--')}</td>
+        <td>${this.escapeHtml(p.vendorName || '--')}</td>
+        <td>${this.escapeHtml(p.descriptionDisplay || p.description || '--')}</td>
+        <td>${this.escapeHtml(p.invoiceNumber || '--')}</td>
+        <td>${this.escapeHtml(p.poNumber || '--')}</td>
+        <td>${this.escapeHtml(Fmt.typeLabel(p.type))}</td>
+        <td class="num">${Fmt.currencyFull(p.amount)}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Jobsite</th>
+            <th>Vendor</th>
+            <th>Description</th>
+            <th>Invoice</th>
+            <th>PO</th>
+            <th>Type</th>
+            <th class="num">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  },
+
+  buildReportMarkup({ includeTransactions = false, transactions = [], projections = this.filteredProjections || [] } = {}) {
     const generatedAt = new Date().toLocaleString();
     const filterSummary = this.getFilterSummaryItems().map(item => `
       <div class="report-meta-item">
@@ -1432,6 +1712,7 @@ const App = {
     const spendChart = this.canvasToImageDataUrl('chart-spend-over-time');
     const jobsiteChart = this.canvasToImageDataUrl('chart-jobsite-breakdown');
     const vendorTableHtml = document.getElementById('vendor-table-container').innerHTML || '<div class="report-empty">No vendor data available.</div>';
+    const totalProjectedAmount = projections.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
     return `
       <div class="report-root">
@@ -1461,6 +1742,11 @@ const App = {
             <section class="report-card-wide">
               <h2>Vendor Details</h2>
               <div class="table-scroll">${vendorTableHtml}</div>
+            </section>
+
+            <section class="report-card-wide">
+              <h2>Projected Costs (${Fmt.number(projections.length)} | ${Fmt.currencyFull(totalProjectedAmount)})</h2>
+              ${this.buildProjectionsReportTable(projections)}
             </section>
 
             ${includeTransactions ? `
@@ -1510,7 +1796,10 @@ const App = {
     button.textContent = 'Preparing...';
 
     try {
-      const transactions = await this.fetchAllFilteredTransactions();
+      const [transactions, projections] = await Promise.all([
+        this.fetchAllFilteredTransactions(),
+        this.fetchFilteredProjections(),
+      ]);
       const reportWindow = window.open('', '_blank');
       if (!reportWindow) throw new Error('The browser blocked the report window.');
 
@@ -1531,7 +1820,7 @@ const App = {
           </style>
         </head>
         <body>
-          ${this.buildReportMarkup({ includeTransactions: true, transactions })}
+          ${this.buildReportMarkup({ includeTransactions: true, transactions, projections })}
           <script>
             window.addEventListener('load', function () {
               window.setTimeout(function () {
