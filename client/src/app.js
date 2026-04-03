@@ -22,6 +22,10 @@ const App = {
   editingProjectionId: null,
   uploadState: { selectedFile: null },
   reportRoot: null,
+  transactionSearch: '',
+  transactionSearchDebounce: null,
+  projectedSearch: '',
+  projectedSearchDebounce: null,
 
   async init() {
     this.bindEvents();
@@ -45,6 +49,48 @@ const App = {
     document.querySelectorAll('.quick-filter').forEach(btn => {
       btn.addEventListener('click', () => this.applyQuickFilter(btn.dataset.range));
     });
+
+    const transactionSearchInput = document.getElementById('transaction-search');
+    const clearTransactionSearchButton = document.getElementById('btn-clear-transaction-search');
+    if (transactionSearchInput) {
+      transactionSearchInput.addEventListener('input', () => {
+        window.clearTimeout(this.transactionSearchDebounce);
+        this.transactionSearchDebounce = window.setTimeout(() => {
+          this.setTransactionSearch(transactionSearchInput.value);
+        }, 180);
+      });
+      transactionSearchInput.addEventListener('search', () => this.setTransactionSearch(transactionSearchInput.value));
+      transactionSearchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          this.clearTransactionSearch({ focusInput: true });
+        }
+      });
+    }
+    if (clearTransactionSearchButton) {
+      clearTransactionSearchButton.addEventListener('click', () => this.clearTransactionSearch({ focusInput: true }));
+    }
+
+    const projectedSearchInput = document.getElementById('projected-search');
+    const clearProjectedSearchButton = document.getElementById('btn-clear-projected-search');
+    if (projectedSearchInput) {
+      projectedSearchInput.addEventListener('input', () => {
+        window.clearTimeout(this.projectedSearchDebounce);
+        this.projectedSearchDebounce = window.setTimeout(() => {
+          this.setProjectedSearch(projectedSearchInput.value);
+        }, 180);
+      });
+      projectedSearchInput.addEventListener('search', () => this.setProjectedSearch(projectedSearchInput.value));
+      projectedSearchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          this.clearProjectedSearch({ focusInput: true });
+        }
+      });
+    }
+    if (clearProjectedSearchButton) {
+      clearProjectedSearchButton.addEventListener('click', () => this.clearProjectedSearch({ focusInput: true }));
+    }
 
     // Modal toggles
     document.getElementById('btn-upload-panel').addEventListener('click', () => {
@@ -74,6 +120,16 @@ const App = {
         if (modal) this.hideModal(modal.id);
       });
     });
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.multi-select')) {
+        this.closeAllMultiSelects();
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        this.closeAllMultiSelects();
+      }
+    });
 
     // Upload
     this.initUpload();
@@ -95,6 +151,8 @@ const App = {
     this.bindSortableHeaders('#projected-data-table', 'projectedData');
     this.bindSortableHeaders('#tab-projections .data-table.compact', 'projectionSettings');
     this.bindSortableHeaders('#tab-mapping .settings-table', 'jobsiteMapping');
+    this.updateTransactionSearchControls();
+    this.updateProjectedSearchControls();
   },
 
   resolveTableElement(target) {
@@ -262,6 +320,107 @@ const App = {
     return params.toString();
   },
 
+  buildTransactionParams({ page = null, limit = null, sortField = null, sortDir = null } = {}) {
+    const params = new URLSearchParams(this.buildQueryString());
+    if (this.transactionSearch) params.set('search', this.transactionSearch);
+    if (sortField) params.set('sortBy', sortField);
+    if (sortDir) params.set('sortDir', sortDir);
+    if (page !== null) params.set('page', page);
+    if (limit !== null) params.set('limit', limit);
+    return params.toString();
+  },
+
+  buildProjectionParams() {
+    const params = new URLSearchParams(this.buildQueryString());
+    if (this.projectedSearch) params.set('search', this.projectedSearch);
+    return params.toString();
+  },
+
+  normalizeInlineText(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+  },
+
+  getTransactionDescriptionText(transaction) {
+    return this.normalizeInlineText(transaction?.description);
+  },
+
+  updateTransactionSearchControls() {
+    const input = document.getElementById('transaction-search');
+    const clearButton = document.getElementById('btn-clear-transaction-search');
+    const summary = document.getElementById('transaction-table-summary');
+
+    if (input && input.value !== this.transactionSearch) {
+      input.value = this.transactionSearch;
+    }
+    if (clearButton) {
+      clearButton.disabled = !this.transactionSearch;
+    }
+    if (summary) {
+      summary.textContent = this.transactionSearch
+        ? `Search results for "${this.transactionSearch}"`
+        : 'Search by jobsite, vendor, description, service order, or ref.';
+    }
+  },
+
+  updateProjectedSearchControls() {
+    const input = document.getElementById('projected-search');
+    const clearButton = document.getElementById('btn-clear-projected-search');
+    const summary = document.getElementById('projected-data-search-summary');
+
+    if (input && input.value !== this.projectedSearch) {
+      input.value = this.projectedSearch;
+    }
+    if (clearButton) {
+      clearButton.disabled = !this.projectedSearch;
+    }
+    if (summary) {
+      summary.textContent = this.projectedSearch
+        ? `Search results for "${this.projectedSearch}"`
+        : 'Search by month, jobsite, vendor, description, invoice, PO, or type.';
+    }
+  },
+
+  setTransactionSearch(value, { focusInput = false } = {}) {
+    const nextSearch = this.normalizeInlineText(value);
+    if (nextSearch === this.transactionSearch) {
+      this.updateTransactionSearchControls();
+      if (focusInput) document.getElementById('transaction-search')?.focus();
+      return;
+    }
+
+    this.transactionSearch = nextSearch;
+    this.currentPage = 1;
+    this.updateTransactionSearchControls();
+    this.loadTransactions();
+
+    if (focusInput) document.getElementById('transaction-search')?.focus();
+  },
+
+  clearTransactionSearch({ focusInput = false } = {}) {
+    window.clearTimeout(this.transactionSearchDebounce);
+    this.setTransactionSearch('', { focusInput });
+  },
+
+  setProjectedSearch(value, { focusInput = false } = {}) {
+    const nextSearch = this.normalizeInlineText(value);
+    if (nextSearch === this.projectedSearch) {
+      this.updateProjectedSearchControls();
+      if (focusInput) document.getElementById('projected-search')?.focus();
+      return;
+    }
+
+    this.projectedSearch = nextSearch;
+    this.updateProjectedSearchControls();
+    this.loadProjectedCosts();
+
+    if (focusInput) document.getElementById('projected-search')?.focus();
+  },
+
+  clearProjectedSearch({ focusInput = false } = {}) {
+    window.clearTimeout(this.projectedSearchDebounce);
+    this.setProjectedSearch('', { focusInput });
+  },
+
   normalizeMonthValue(value) {
     return /^\d{4}-\d{2}$/.test(value || '') ? value : null;
   },
@@ -360,7 +519,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.4.0';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.5.0';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -446,36 +605,45 @@ const App = {
   // -- Data Table --
   async loadTransactions() {
     try {
-      const qs = this.buildQueryString();
       const sortField = this.currentSort?.field || 'date';
       const sortDir = this.currentSort?.dir || 'desc';
-      const sortQs = `sortBy=${encodeURIComponent(sortField)}&sortDir=${encodeURIComponent(sortDir)}&page=${this.currentPage}&limit=${TRANSACTION_PAGE_SIZE}`;
-      const sep = qs ? '&' : '';
-      const url = `/api/transactions?${sortQs}${sep}${qs}`;
+      const qs = this.buildTransactionParams({
+        sortField,
+        sortDir,
+        page: this.currentPage,
+        limit: TRANSACTION_PAGE_SIZE,
+      });
+      const url = `/api/transactions?${qs}`;
       const result = await (await fetch(url)).json();
 
       const tbody = document.getElementById('data-table-body');
       this.updateSortHeaderClasses('#data-table', this.currentSort);
       if (!result.data.length) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No transactions to display. Upload an Excel file to get started.</td></tr>';
+        const emptyMessage = this.transactionSearch
+          ? 'No transactions match the current filters and search.'
+          : 'No transactions to display. Upload an Excel file to get started.';
+        tbody.innerHTML = `<tr><td colspan="10" class="empty-state">${emptyMessage}</td></tr>`;
         document.getElementById('pagination-controls').innerHTML = '';
         return;
       }
 
-      tbody.innerHTML = result.data.map(t => `
-        <tr>
-          <td>${Fmt.date(t.date)}</td>
-          <td>${this.escapeHtml(this.jobsiteMapping[t.baseJob] || t.baseJob || '--')}</td>
-          <td>${this.escapeHtml(t.serviceOrder || '--')}</td>
-          <td><span class="badge badge-${(t.type || '').toLowerCase()}">${this.escapeHtml(t.category || '--')}</span></td>
-          <td>${this.escapeHtml(Fmt.truncate(t.vendorName || '', 30) || '--')}</td>
-          <td class="description-cell" title="${this.escapeHtml(t.description || '')}">${this.escapeHtml(Fmt.truncate(t.description || '', 55) || '--')}</td>
-          <td class="num">${t.debit ? Fmt.currencyFull(t.debit) : ''}</td>
-          <td class="num">${t.credit ? Fmt.currencyFull(t.credit) : ''}</td>
-          <td class="num ${t.net < 0 ? 'text-green' : ''}">${Fmt.currencyFull(t.net)}</td>
-          <td class="ref-cell" title="${this.escapeHtml(t.ref || '')}">${this.escapeHtml(t.ref || '')}</td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = result.data.map(t => {
+        const description = this.getTransactionDescriptionText(t) || '--';
+        return `
+          <tr>
+            <td>${Fmt.date(t.date)}</td>
+            <td>${this.escapeHtml(this.jobsiteMapping[t.baseJob] || t.baseJob || '--')}</td>
+            <td>${this.escapeHtml(t.serviceOrder || '--')}</td>
+            <td><span class="badge badge-${(t.type || '').toLowerCase()}">${this.escapeHtml(t.category || '--')}</span></td>
+            <td>${this.escapeHtml(Fmt.truncate(t.vendorName || '', 30) || '--')}</td>
+            <td class="description-cell" title="${this.escapeHtml(description)}">${this.escapeHtml(description)}</td>
+            <td class="num">${t.debit ? Fmt.currencyFull(t.debit) : ''}</td>
+            <td class="num">${t.credit ? Fmt.currencyFull(t.credit) : ''}</td>
+            <td class="num ${t.net < 0 ? 'text-green' : ''}">${Fmt.currencyFull(t.net)}</td>
+            <td class="ref-cell" title="${this.escapeHtml(t.ref || '')}">${this.escapeHtml(t.ref || '')}</td>
+          </tr>
+        `;
+      }).join('');
 
       // Pagination
       this.renderPagination(result);
@@ -490,16 +658,21 @@ const App = {
     if (!tbody) return;
 
     try {
-      const result = await this.api('projections');
+      const qs = this.buildProjectionParams();
+      const result = await (await fetch(`/api/projections${qs ? `?${qs}` : ''}`)).json();
       const items = Array.isArray(result) ? result : [];
       const sortState = this.tableSorts.projectedData;
       const sorted = this.sortItems(items, item => this.getProjectedSortValue(item, sortState.field), sortState.dir);
 
       this.filteredProjections = sorted;
       this.updateSortHeaderClasses('#projected-data-table', sortState);
+      this.updateProjectedSearchControls();
 
       if (!sorted.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No projected costs match the current dashboard filters.</td></tr>';
+        const emptyMessage = this.projectedSearch
+          ? 'No projected costs match the current filters and search.'
+          : 'No projected costs match the current dashboard filters.';
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-state">${emptyMessage}</td></tr>`;
         if (summary) summary.textContent = '0 projected costs shown';
         return;
       }
@@ -525,6 +698,7 @@ const App = {
       this.filteredProjections = [];
       tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Unable to load projected costs.</td></tr>';
       if (summary) summary.textContent = '';
+      this.updateProjectedSearchControls();
       console.error('Failed to load projected costs:', err);
     }
   },
@@ -533,12 +707,13 @@ const App = {
     const container = document.getElementById('pagination-controls');
     const rangeStart = result.total ? ((result.page - 1) * result.limit) + 1 : 0;
     const rangeEnd = Math.min(result.page * result.limit, result.total);
+    const transactionLabel = this.transactionSearch ? 'matching transactions' : 'transactions';
 
     if (result.totalPages <= 1) {
-      container.innerHTML = `<span class="page-info">Showing ${Fmt.number(rangeStart)}-${Fmt.number(rangeEnd)} of ${Fmt.number(result.total)} transactions</span>`;
+      container.innerHTML = `<span class="page-info">Showing ${Fmt.number(rangeStart)}-${Fmt.number(rangeEnd)} of ${Fmt.number(result.total)} ${transactionLabel}</span>`;
       return;
     }
-    let html = `<span class="page-info">Showing ${Fmt.number(rangeStart)}-${Fmt.number(rangeEnd)} of ${Fmt.number(result.total)} transactions</span>`;
+    let html = `<span class="page-info">Showing ${Fmt.number(rangeStart)}-${Fmt.number(rangeEnd)} of ${Fmt.number(result.total)} ${transactionLabel}</span>`;
     html += `<button class="btn btn-sm" ${result.page <= 1 ? 'disabled' : ''} onclick="App.goToPage(${result.page - 1})">Prev</button>`;
     html += `<button class="btn btn-sm" ${result.page >= result.totalPages ? 'disabled' : ''} onclick="App.goToPage(${result.page + 1})">Next</button>`;
     container.innerHTML = html;
@@ -576,8 +751,12 @@ const App = {
       `<label class="type-checkbox"><input type="checkbox" value="${t}" checked />${Fmt.typeLabel(t)}</label>`
     ).join('');
 
-    document.querySelectorAll('.ms-item, .ms-all').forEach(input => {
-      input.addEventListener('change', () => this.updateMultiSelectControl(input.dataset.prefix));
+    this.initMultiSelects();
+    document.querySelectorAll('.ms-all').forEach(input => {
+      input.addEventListener('change', () => this.toggleAllOptions(input));
+    });
+    document.querySelectorAll('.ms-item').forEach(input => {
+      input.addEventListener('change', () => this.handleMultiSelectItemChange(input));
     });
     document.querySelectorAll('.ms-search').forEach(input => {
       input.addEventListener('input', () => this.filterMultiSelectOptions(input));
@@ -589,16 +768,72 @@ const App = {
   createMultiSelect(options, prefix) {
     if (!options.length) return '<span class="empty-filter">No data</span>';
     let html = `<div class="multi-select">`;
-    html += `<button class="multi-select-btn" onclick="this.parentElement.classList.toggle('open')">All (${options.length})</button>`;
+    html += `<button type="button" class="multi-select-btn" aria-expanded="false">All (${options.length})</button>`;
     html += `<div class="multi-select-dropdown">`;
     html += `<div class="ms-search-wrap"><input type="search" class="ms-search" data-prefix="${prefix}" placeholder="Search..." autocomplete="off" /></div>`;
-    html += `<label class="ms-option ms-option-select-all"><input type="checkbox" class="ms-all" data-prefix="${prefix}" checked onchange="App.toggleAllOptions(this)" /> Select All</label>`;
+    html += `<label class="ms-option ms-option-select-all"><input type="checkbox" class="ms-all" data-prefix="${prefix}" checked /> Select All</label>`;
     for (const o of options) {
       const optionLabel = o.label || o.value || '';
       html += `<label class="ms-option" data-prefix="${prefix}" data-label="${this.escapeHtml(optionLabel.toLowerCase())}"><input type="checkbox" class="ms-item" data-prefix="${prefix}" value="${this.escapeHtml(o.value)}" checked /> ${this.escapeHtml(Fmt.truncate(optionLabel, 35))}</label>`;
     }
     html += '</div></div>';
     return html;
+  },
+
+  initMultiSelects() {
+    document.querySelectorAll('.multi-select').forEach(container => {
+      if (container.dataset.bound === '1') return;
+      container.dataset.bound = '1';
+
+      const button = container.querySelector('.multi-select-btn');
+      const dropdown = container.querySelector('.multi-select-dropdown');
+      if (button) {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.toggleMultiSelect(container);
+        });
+      }
+      if (dropdown) {
+        dropdown.addEventListener('click', (event) => event.stopPropagation());
+      }
+    });
+  },
+
+  toggleMultiSelect(container) {
+    if (!container) return;
+
+    const shouldOpen = !container.classList.contains('open');
+    this.closeAllMultiSelects(container);
+
+    if (!shouldOpen) {
+      this.closeMultiSelect(container);
+      return;
+    }
+
+    container.classList.add('open');
+    container.querySelector('.multi-select-btn')?.setAttribute('aria-expanded', 'true');
+    container.querySelector('.ms-search')?.focus();
+  },
+
+  closeMultiSelect(container) {
+    if (!container) return;
+
+    container.classList.remove('open');
+    container.querySelector('.multi-select-btn')?.setAttribute('aria-expanded', 'false');
+
+    const searchInput = container.querySelector('.ms-search');
+    if (searchInput) {
+      searchInput.value = '';
+      this.filterMultiSelectOptions(searchInput);
+    }
+  },
+
+  closeAllMultiSelects(except = null) {
+    document.querySelectorAll('.multi-select.open').forEach(container => {
+      if (except && container === except) return;
+      this.closeMultiSelect(container);
+    });
   },
 
   filterMultiSelectOptions(input) {
@@ -615,6 +850,17 @@ const App = {
     const items = document.querySelectorAll(`.ms-item[data-prefix="${prefix}"]`);
     items.forEach(cb => { cb.checked = checkbox.checked; });
     this.updateMultiSelectControl(prefix);
+    if (prefix === 'vendor') {
+      this.closeMultiSelect(checkbox.closest('.multi-select'));
+    }
+  },
+
+  handleMultiSelectItemChange(input) {
+    const prefix = input.dataset.prefix;
+    this.updateMultiSelectControl(prefix);
+    if (prefix === 'vendor') {
+      this.closeMultiSelect(input.closest('.multi-select'));
+    }
   },
 
   updateMultiSelectControl(prefix) {
@@ -763,6 +1009,13 @@ const App = {
       types: null,
       excludeRock: false,
     };
+    this.transactionSearch = '';
+    this.projectedSearch = '';
+    window.clearTimeout(this.transactionSearchDebounce);
+    window.clearTimeout(this.projectedSearchDebounce);
+    this.updateTransactionSearchControls();
+    this.updateProjectedSearchControls();
+    this.closeAllMultiSelects();
     this.applyFilterStateToControls();
     this.currentPage = 1;
     this.syncFiltersToUrl();
@@ -1483,12 +1736,12 @@ const App = {
   },
 
   exportCSV() {
-    const qs = this.buildQueryString();
+    const qs = this.buildTransactionParams();
     window.location.href = `/api/export${qs ? '?' + qs : ''}`;
   },
 
   exportProjectionsCSV(useCurrentFilters = false) {
-    const qs = useCurrentFilters ? this.buildQueryString() : '';
+    const qs = useCurrentFilters ? this.buildProjectionParams() : '';
     window.location.href = `/api/projections/export${qs ? '?' + qs : ''}`;
   },
 
@@ -1602,16 +1855,20 @@ const App = {
   },
 
   async fetchAllFilteredTransactions() {
-    const qs = this.buildQueryString();
-    const sortQs = 'sortBy=date&sortDir=desc&page=1&limit=1000000';
-    const sep = qs ? '&' : '';
-    const url = `/api/transactions?${sortQs}${sep}${qs}`;
+    const qs = this.buildTransactionParams({
+      sortField: 'date',
+      sortDir: 'desc',
+      page: 1,
+      limit: 1000000,
+    });
+    const url = `/api/transactions?${qs}`;
     const result = await (await fetch(url)).json();
     return result.data || [];
   },
 
   async fetchFilteredProjections() {
-    const result = await this.api('projections');
+    const qs = this.buildProjectionParams();
+    const result = await (await fetch(`/api/projections${qs ? `?${qs}` : ''}`)).json();
     return Array.isArray(result) ? result : [];
   },
 
@@ -1627,7 +1884,7 @@ const App = {
         <td>${this.escapeHtml(t.serviceOrder || '--')}</td>
         <td>${this.escapeHtml(t.category || '--')}</td>
         <td>${this.escapeHtml(t.vendorName || '--')}</td>
-        <td>${this.escapeHtml(t.description || '--')}</td>
+        <td>${this.escapeHtml(this.getTransactionDescriptionText(t) || '--')}</td>
         <td class="num">${t.debit ? Fmt.currencyFull(t.debit) : ''}</td>
         <td class="num">${t.credit ? Fmt.currencyFull(t.credit) : ''}</td>
         <td class="num">${Fmt.currencyFull(t.net)}</td>

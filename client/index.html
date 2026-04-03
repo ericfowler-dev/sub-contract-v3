@@ -12,7 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
-      <span id="app-version" class="version-chip">v1.4.0</span>
+      <span id="app-version" class="version-chip">v1.5.0</span>
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
@@ -132,9 +132,17 @@
       <div class="data-table-heading">
         <h2>Projected Costs Data</h2>
         <div id="projected-data-summary" class="table-summary"></div>
+        <div id="projected-data-search-summary" class="table-summary">Search by month, jobsite, vendor, description, invoice, PO, or type.</div>
       </div>
       <div class="table-actions">
         <button id="btn-export-projected-data-csv" class="btn btn-secondary">Export CSV</button>
+      </div>
+    </div>
+    <div class="table-search-row">
+      <div class="table-search">
+        <label for="projected-search" class="sr-only">Search projected costs</label>
+        <input id="projected-search" class="table-search-input" type="search" placeholder="Search projected costs..." autocomplete="off" />
+        <button id="btn-clear-projected-search" class="btn btn-ghost btn-sm" type="button" disabled>Clear Search</button>
       </div>
     </div>
     <div class="table-scroll">
@@ -158,11 +166,21 @@
 
   <section class="data-table-section">
     <div class="data-table-header">
-      <h2>Transaction Data</h2>
+      <div class="data-table-heading">
+        <h2>Transaction Data</h2>
+        <div id="transaction-table-summary" class="table-summary">Search by jobsite, vendor, description, service order, or ref.</div>
+      </div>
       <div class="table-actions">
         <button id="btn-print-report" class="btn btn-secondary">Print / PDF</button>
         <button id="btn-export-jpeg" class="btn btn-secondary">Export JPEG</button>
         <button id="btn-export-csv" class="btn btn-secondary">Export CSV</button>
+      </div>
+    </div>
+    <div class="table-search-row">
+      <div class="table-search">
+        <label for="transaction-search" class="sr-only">Search transaction data</label>
+        <input id="transaction-search" class="table-search-input" type="search" placeholder="Search transaction data..." autocomplete="off" />
+        <button id="btn-clear-transaction-search" class="btn btn-ghost btn-sm" type="button" disabled>Clear Search</button>
       </div>
     </div>
     <div class="table-scroll">

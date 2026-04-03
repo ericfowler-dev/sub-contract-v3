@@ -55,6 +55,10 @@ function cleanText(value) {
   return String(value ?? '').trim();
 }
 
+function normalizeSearchText(value) {
+  return cleanText(value).toLowerCase().replace(/\s+/g, ' ');
+}
+
 function compareSortValues(a, b, dir = 1) {
   const isNumeric = typeof a === 'number' || typeof b === 'number';
   if (isNumeric) {
@@ -93,6 +97,48 @@ function getTransactionSortValue(transaction, sortBy, jobsiteMapping = {}) {
     default:
       return cleanText(transaction.date);
   }
+}
+
+function filterTransactionsBySearch(transactions, search, jobsiteMapping = {}) {
+  const query = normalizeSearchText(search);
+  if (!query) return transactions;
+
+  return transactions.filter((transaction) => {
+    const searchableFields = [
+      transaction.date,
+      jobsiteMapping[transaction.baseJob] || '',
+      transaction.baseJob,
+      transaction.serviceOrder,
+      transaction.category,
+      transaction.type,
+      transaction.vendorName,
+      transaction.description,
+      transaction.ref,
+    ];
+
+    return searchableFields.some((value) => normalizeSearchText(value).includes(query));
+  });
+}
+
+function filterProjectionsBySearch(projections, search, jobsiteMapping = {}) {
+  const query = normalizeSearchText(search);
+  if (!query) return projections;
+
+  return projections.filter((projection) => {
+    const searchableFields = [
+      projection.month,
+      jobsiteMapping[projection.baseJob] || '',
+      projection.baseJob,
+      projection.vendorName,
+      projection.description,
+      projection.descriptionDisplay,
+      projection.invoiceNumber,
+      projection.poNumber,
+      projection.type,
+    ];
+
+    return searchableFields.some((value) => normalizeSearchText(value).includes(query));
+  });
 }
 
 function extractProjectionReferences(description) {
@@ -257,6 +303,7 @@ router.get('/type-breakdown', (req, res) => {
 router.get('/transactions', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const filtered = applyFilters(db.transactions, getFilters(req.query));
+  const searched = filterTransactionsBySearch(filtered, req.query.search, db.jobsiteMapping);
 
   // Pagination
   const page = parseInt(req.query.page) || 1;
@@ -266,7 +313,7 @@ router.get('/transactions', (req, res) => {
   // Sorting
   const sortBy = req.query.sortBy || 'date';
   const sortDir = req.query.sortDir === 'asc' ? 1 : -1;
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = [...searched].sort((a, b) => {
     const aVal = getTransactionSortValue(a, sortBy, db.jobsiteMapping);
     const bVal = getTransactionSortValue(b, sortBy, db.jobsiteMapping);
     return compareSortValues(aVal, bVal, sortDir);
@@ -351,7 +398,8 @@ router.get('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const { projections } = syncValidProjections(req, db);
   const filteredProjections = applyProjectionFilters(projections, getFilters(req.query));
-  res.json(filteredProjections.map(normalizeProjection));
+  const normalized = filteredProjections.map(normalizeProjection);
+  res.json(filterProjectionsBySearch(normalized, req.query.search, db.jobsiteMapping));
 });
 
 // GET /api/projections/export
@@ -360,7 +408,8 @@ router.get('/projections/export', (req, res) => {
   const { projections } = syncValidProjections(req, db);
   const filteredProjections = applyProjectionFilters(projections, getFilters(req.query));
   const normalized = filteredProjections.map(normalizeProjection);
-  const csv = buildProjectionCsv(normalized, db.jobsiteMapping);
+  const searched = filterProjectionsBySearch(normalized, req.query.search, db.jobsiteMapping);
+  const csv = buildProjectionCsv(searched, db.jobsiteMapping);
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=projected-costs-export.csv');
@@ -539,9 +588,10 @@ router.get('/metadata', (req, res) => {
 router.get('/export', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const filtered = applyFilters(db.transactions, getFilters(req.query));
+  const searched = filterTransactionsBySearch(filtered, req.query.search, db.jobsiteMapping);
 
   const csvHeaders = ['Date', 'Jobsite Name', 'Service Order', 'Category', 'Type', 'Vendor', 'Description', 'Debit', 'Credit', 'Net', 'Ref'];
-  const csvRows = filtered.map(t => [
+  const csvRows = searched.map(t => [
     t.date,
     db.jobsiteMapping[t.baseJob] || t.baseJob,
     t.serviceOrder,
