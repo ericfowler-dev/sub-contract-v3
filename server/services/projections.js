@@ -47,6 +47,7 @@ function parseProjectionImportFile(filePath, jobsiteMapping = {}) {
       description: cleanText(getColumnValue(row, headers, ['description', 'scope', 'descriptionscope'])),
       invoiceNumber: cleanText(getColumnValue(row, headers, ['invoicenumber', 'invoice', 'invoiceno', 'inv'])),
       poNumber: cleanText(getColumnValue(row, headers, ['ponumber', 'po', 'pono'])),
+      quoteNumber: cleanText(getColumnValue(row, headers, ['quotenumber', 'quote', 'quoteno', 'quoteid'])),
       amount,
       type: cleanText(getColumnValue(row, headers, ['type', 'transactiontype'])).toUpperCase() || 'PUR-SUB',
     };
@@ -68,7 +69,7 @@ function parseProjectionImportFile(filePath, jobsiteMapping = {}) {
 }
 
 function buildProjectionCsv(projections, jobsiteMapping = {}) {
-  const headers = ['Month', 'Base Job', 'Jobsite Name', 'Vendor', 'Description', 'Invoice Number', 'PO Number', 'Type', 'Amount'];
+  const headers = ['Month', 'Base Job', 'Jobsite Name', 'Vendor', 'Description', 'Invoice Number', 'PO Number', 'Quote', 'Type', 'Amount'];
   const rows = projections.map((projection) => [
     projection.month || '',
     projection.baseJob || '',
@@ -77,6 +78,7 @@ function buildProjectionCsv(projections, jobsiteMapping = {}) {
     projection.description || '',
     projection.invoiceNumber || '',
     projection.poNumber || '',
+    projection.quoteNumber || '',
     projection.type || 'PUR-SUB',
     projection.amount || 0,
   ]);
@@ -92,6 +94,7 @@ function createProjectionImportKey(projection) {
     normalizeKey(projection.description),
     normalizeKey(projection.invoiceNumber),
     normalizeKey(projection.poNumber),
+    normalizeKey(projection.quoteNumber),
     normalizeKey(projection.type || 'PUR-SUB'),
     Number(projection.amount || 0).toFixed(2),
   ].join('|');

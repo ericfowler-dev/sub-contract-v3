@@ -262,6 +262,8 @@ const App = {
         return projection.invoiceNumber || '';
       case 'po':
         return projection.poNumber || '';
+      case 'quote':
+        return projection.quoteNumber || '';
       case 'type':
         return Fmt.typeLabel(projection.type || 'PUR-SUB');
       case 'amount':
@@ -519,7 +521,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.5.0';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.5.1';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -672,7 +674,7 @@ const App = {
         const emptyMessage = this.projectedSearch
           ? 'No projected costs match the current filters and search.'
           : 'No projected costs match the current dashboard filters.';
-        tbody.innerHTML = `<tr><td colspan="8" class="empty-state">${emptyMessage}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${emptyMessage}</td></tr>`;
         if (summary) summary.textContent = '0 projected costs shown';
         return;
       }
@@ -685,6 +687,7 @@ const App = {
           <td class="description-cell" title="${this.escapeHtml(p.description || '--')}">${this.escapeHtml(Fmt.truncate(p.descriptionDisplay || p.description || '--', 55))}</td>
           <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.invoiceNumber || '--')}">${this.escapeHtml(p.invoiceNumber || '--')}</td>
           <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.poNumber || '--')}">${this.escapeHtml(p.poNumber || '--')}</td>
+          <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.quoteNumber || '--')}">${this.escapeHtml(p.quoteNumber || '--')}</td>
           <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type))}</span></td>
           <td class="num">${Fmt.currencyFull(p.amount)}</td>
         </tr>
@@ -696,7 +699,7 @@ const App = {
       }
     } catch (err) {
       this.filteredProjections = [];
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Unable to load projected costs.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Unable to load projected costs.</td></tr>';
       if (summary) summary.textContent = '';
       this.updateProjectedSearchControls();
       console.error('Failed to load projected costs:', err);
@@ -1375,6 +1378,7 @@ const App = {
     const descriptionInput = document.getElementById('proj-description');
     const invoiceInput = document.getElementById('proj-invoice');
     const poInput = document.getElementById('proj-po');
+    const quoteInput = document.getElementById('proj-quote');
     const amountInput = document.getElementById('proj-amount');
     const typeSelect = document.getElementById('proj-type');
 
@@ -1382,6 +1386,7 @@ const App = {
     if (descriptionInput) descriptionInput.value = '';
     if (invoiceInput) invoiceInput.value = '';
     if (poInput) poInput.value = '';
+    if (quoteInput) quoteInput.value = '';
     if (amountInput) amountInput.value = '';
     if (typeSelect) typeSelect.value = 'PUR-SUB';
 
@@ -1403,6 +1408,7 @@ const App = {
     document.getElementById('proj-description').value = projection.description || '';
     document.getElementById('proj-invoice').value = projection.invoiceNumber || '';
     document.getElementById('proj-po').value = projection.poNumber || '';
+    document.getElementById('proj-quote').value = projection.quoteNumber || '';
     document.getElementById('proj-amount').value = projection.amount || '';
     document.getElementById('proj-type').value = projection.type || 'PUR-SUB';
 
@@ -1436,6 +1442,7 @@ const App = {
     const description = document.getElementById('proj-description').value.trim();
     const invoiceNumber = document.getElementById('proj-invoice').value.trim();
     const poNumber = document.getElementById('proj-po').value.trim();
+    const quoteNumber = document.getElementById('proj-quote').value.trim();
     const amount = parseFloat(document.getElementById('proj-amount').value);
     const type = document.getElementById('proj-type').value;
 
@@ -1448,7 +1455,7 @@ const App = {
       return null;
     }
 
-    return { month, baseJob, vendorName, description, invoiceNumber, poNumber, amount, type };
+    return { month, baseJob, vendorName, description, invoiceNumber, poNumber, quoteNumber, amount, type };
   },
 
   async refreshAfterProjectionChange() {
@@ -1495,6 +1502,7 @@ const App = {
           <td class="projection-description-cell" title="${this.escapeHtml(p.description || '--')}">${this.escapeHtml(p.descriptionDisplay || p.description || '--')}</td>
           <td class="projection-ref-cell">${this.escapeHtml(p.invoiceNumber || '--')}</td>
           <td class="projection-ref-cell">${this.escapeHtml(p.poNumber || '--')}</td>
+          <td class="projection-ref-cell">${this.escapeHtml(p.quoteNumber || '--')}</td>
           <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type || 'PUR-SUB'))}</span></td>
           <td class="num">${Fmt.currency(p.amount)}</td>
           <td class="projection-actions-cell">
@@ -1604,10 +1612,19 @@ const App = {
           if (vendorSelect.value === '__custom__') {
             const customVendor = this.normalizeProjectionVendorName(prompt('Enter vendor name:'));
             if (customVendor) {
-              const existing = [...vendorSelect.options].find(opt => opt.value.toLowerCase() === customVendor.toLowerCase());
-              vendorSelect.value = existing?.value || customVendor;
-              this.populateProjectionDropdowns();
-              vendorSelect.value = existing?.value || customVendor;
+              const existing = [...vendorSelect.options].find(
+                opt => opt.value && opt.value !== '__custom__' && opt.value.toLowerCase() === customVendor.toLowerCase(),
+              );
+              if (existing) {
+                vendorSelect.value = existing.value;
+                return;
+              }
+
+              const customOption = document.createElement('option');
+              customOption.value = customVendor;
+              customOption.textContent = customVendor;
+              vendorSelect.insertBefore(customOption, vendorSelect.querySelector('option[value="__custom__"]'));
+              vendorSelect.value = customVendor;
             } else {
               vendorSelect.value = '';
             }
@@ -1926,6 +1943,7 @@ const App = {
         <td>${this.escapeHtml(p.descriptionDisplay || p.description || '--')}</td>
         <td>${this.escapeHtml(p.invoiceNumber || '--')}</td>
         <td>${this.escapeHtml(p.poNumber || '--')}</td>
+        <td>${this.escapeHtml(p.quoteNumber || '--')}</td>
         <td>${this.escapeHtml(Fmt.typeLabel(p.type))}</td>
         <td class="num">${Fmt.currencyFull(p.amount)}</td>
       </tr>
@@ -1941,6 +1959,7 @@ const App = {
             <th>Description</th>
             <th>Invoice</th>
             <th>PO</th>
+            <th>Quote</th>
             <th>Type</th>
             <th class="num">Amount</th>
           </tr>

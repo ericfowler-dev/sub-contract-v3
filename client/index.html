@@ -12,7 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
-      <span id="app-version" class="version-chip">v1.5.0</span>
+      <span id="app-version" class="version-chip">v1.5.1</span>
     </div>
     <div class="header-right">
       <span id="data-status" class="data-status">No data loaded</span>
@@ -132,7 +132,7 @@
       <div class="data-table-heading">
         <h2>Projected Costs Data</h2>
         <div id="projected-data-summary" class="table-summary"></div>
-        <div id="projected-data-search-summary" class="table-summary">Search by month, jobsite, vendor, description, invoice, PO, or type.</div>
+        <div id="projected-data-search-summary" class="table-summary">Search by month, jobsite, vendor, description, invoice, PO, quote, or type.</div>
       </div>
       <div class="table-actions">
         <button id="btn-export-projected-data-csv" class="btn btn-secondary">Export CSV</button>
@@ -155,6 +155,7 @@
             <th data-sort="description">Description</th>
             <th data-sort="invoice">Invoice</th>
             <th data-sort="po">PO</th>
+            <th data-sort="quote">Quote</th>
             <th data-sort="type">Type</th>
             <th class="num" data-sort="amount">Amount</th>
           </tr>
@@ -288,7 +289,7 @@
               <button id="btn-export-projections-csv" class="btn btn-secondary btn-sm">Export Projections CSV</button>
               <button id="btn-clear-projections" class="btn btn-secondary btn-sm">Clear All</button>
             </div>
-            <p class="projection-help">Backup format: use the exported projections CSV. Import accepts `.xlsx`, `.xls`, or `.csv` with columns like Month, Base Job, Vendor, Description, Invoice Number, PO Number, Type, and Amount.</p>
+            <p class="projection-help">Backup format: use the exported projections CSV. Import accepts `.xlsx`, `.xls`, or `.csv` with columns like Month, Base Job, Vendor, Description, Invoice Number, PO Number, Quote, Type, and Amount.</p>
             <p id="projection-window-note" class="projection-help"></p>
           </div>
 
@@ -322,6 +323,10 @@
               <div class="proj-field proj-field-ref">
                 <label>PO</label>
                 <input type="text" id="proj-po" class="mapping-input" placeholder="e.g., 69383" />
+              </div>
+              <div class="proj-field proj-field-ref">
+                <label>Quote</label>
+                <input type="text" id="proj-quote" class="mapping-input" placeholder="e.g., Q-10422" />
               </div>
             </div>
             <div class="proj-form-row">
@@ -358,6 +363,7 @@
                   <th data-sort="description">Description</th>
                   <th data-sort="invoice">Invoice</th>
                   <th data-sort="po">PO</th>
+                  <th data-sort="quote">Quote</th>
                   <th data-sort="type">Type</th>
                   <th class="num" data-sort="amount">Amount</th>
                   <th style="width:120px">Actions</th>

@@ -134,6 +134,7 @@ function filterProjectionsBySearch(projections, search, jobsiteMapping = {}) {
       projection.descriptionDisplay,
       projection.invoiceNumber,
       projection.poNumber,
+      projection.quoteNumber,
       projection.type,
     ];
 
@@ -174,6 +175,7 @@ function normalizeProjection(projection) {
     descriptionDisplay: derivedRefs.descriptionDisplay || description,
     invoiceNumber: cleanText(projection.invoiceNumber || projection.invoice) || derivedRefs.invoiceNumber,
     poNumber: cleanText(projection.poNumber || projection.po) || derivedRefs.poNumber,
+    quoteNumber: cleanText(projection.quoteNumber || projection.quote),
   };
 }
 
@@ -189,6 +191,9 @@ function sanitizeProjectionInput(input = {}) {
   }
   if (Object.prototype.hasOwnProperty.call(input, 'poNumber') || Object.prototype.hasOwnProperty.call(input, 'po')) {
     sanitized.poNumber = cleanText(input.poNumber ?? input.po);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'quoteNumber') || Object.prototype.hasOwnProperty.call(input, 'quote')) {
+    sanitized.quoteNumber = cleanText(input.quoteNumber ?? input.quote);
   }
   if (Object.prototype.hasOwnProperty.call(input, 'amount')) sanitized.amount = Number(input.amount) || 0;
   if (Object.prototype.hasOwnProperty.call(input, 'type')) sanitized.type = cleanText(input.type) || 'PUR-SUB';
@@ -210,6 +215,7 @@ function createProjectionRecord(input = {}) {
     description: sanitized.description || '',
     invoiceNumber: sanitized.invoiceNumber || '',
     poNumber: sanitized.poNumber || '',
+    quoteNumber: sanitized.quoteNumber || '',
     amount: Number(sanitized.amount) || 0,
     type: sanitized.type || 'PUR-SUB',
     createdAt: new Date().toISOString(),
