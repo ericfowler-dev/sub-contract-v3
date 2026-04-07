@@ -10,6 +10,14 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: AUTH_ENABLED
+        value: true
+      - key: AUTH_ALLOWED_DOMAIN
+        value: psiengines.com
+      - key: AUTH_SHARED_PASSWORD
+        generateValue: true
+      - key: AUTH_SESSION_SECRET
+        generateValue: true
     disk:
       name: data
       mountPath: /data

@@ -16,6 +16,7 @@ const App = {
   currentPage: 1,
   jobsiteMapping: {},
   metadata: null,
+  authState: null,
   projections: [],
   filteredProjections: [],
   vendorAnalysisData: [],
@@ -29,6 +30,8 @@ const App = {
 
   async init() {
     this.bindEvents();
+    const canContinue = await this.loadAuthState();
+    if (!canContinue) return;
     await this.loadFilterOptions();
     await this.loadJobsiteMapping();
     this.hydrateFiltersFromUrl();
@@ -146,6 +149,7 @@ const App = {
     document.getElementById('btn-export-projected-data-csv').addEventListener('click', () => this.exportProjectionsCSV(true));
     document.getElementById('btn-clear-projections').addEventListener('click', () => this.clearAllProjections());
     document.getElementById('btn-cancel-projection-edit').addEventListener('click', () => this.cancelProjectionEdit());
+    document.getElementById('btn-logout')?.addEventListener('click', () => this.logout());
 
     this.bindSortableHeaders('#data-table', 'transactions');
     this.bindSortableHeaders('#projected-data-table', 'projectedData');
@@ -153,6 +157,61 @@ const App = {
     this.bindSortableHeaders('#tab-mapping .settings-table', 'jobsiteMapping');
     this.updateTransactionSearchControls();
     this.updateProjectedSearchControls();
+  },
+
+  renderAuthState() {
+    const emailChip = document.getElementById('auth-user-email');
+    const logoutButton = document.getElementById('btn-logout');
+    const userEmail = this.authState?.user?.email || '';
+    const shouldShow = Boolean(this.authState?.enabled && userEmail);
+
+    if (emailChip) {
+      emailChip.textContent = userEmail;
+      emailChip.classList.toggle('hidden', !shouldShow);
+    }
+
+    if (logoutButton) {
+      logoutButton.classList.toggle('hidden', !shouldShow);
+    }
+  },
+
+  async loadAuthState() {
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (!res.ok) {
+        if (res.status === 401) {
+          window.location.href = '/login';
+          return false;
+        }
+        throw new Error('Unable to load authentication status.');
+      }
+
+      this.authState = await res.json();
+      this.renderAuthState();
+
+      if (this.authState?.enabled && !this.authState?.authenticated) {
+        window.location.href = '/login';
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Failed to load authentication state:', err);
+      return true;
+    }
+  },
+
+  async logout() {
+    const logoutButton = document.getElementById('btn-logout');
+    if (logoutButton) logoutButton.disabled = true;
+
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to clear session:', err);
+    } finally {
+      window.location.href = '/login';
+    }
   },
 
   resolveTableElement(target) {
@@ -521,7 +580,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.5.1';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.5.2';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
