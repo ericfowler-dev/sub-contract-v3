@@ -5,7 +5,7 @@ const DEFAULT_ALLOWED_DOMAIN = 'psiengines.com';
 const DEFAULT_SESSION_HOURS = 12;
 
 function isProduction() {
-  return process.env.NODE_ENV === 'production';
+  return process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER_EXTERNAL_URL);
 }
 
 function normalizeBoolean(value, fallback) {
