@@ -295,20 +295,16 @@ function renderLoginPage({ nextPath = '/', errorMessage = '', statusCode = 200 }
     .notice {
       display: none;
       margin-bottom: 16px;
-      padding: 11px 12px;
+      padding: 12px 14px;
       border-radius: 10px;
       border: 1px solid var(--danger-border);
       background: var(--danger-bg);
       color: var(--danger-text);
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 800;
       line-height: 1.45;
     }
     .notice.show { display: block; }
-    .hint {
-      margin-top: 16px;
-      font-size: 12px;
-      color: var(--muted);
-    }
   </style>
 </head>
 <body>
@@ -329,7 +325,6 @@ function renderLoginPage({ nextPath = '/', errorMessage = '', statusCode = 200 }
       </label>
       <button id="login-button" type="submit">Enter Dashboard</button>
     </form>
-    <div class="hint">This gate is intentionally basic. It blocks anonymous internet access, but it does not verify mailbox ownership.</div>
   </main>
   <script>
     (function () {

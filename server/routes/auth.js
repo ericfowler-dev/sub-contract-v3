@@ -60,7 +60,7 @@ router.post('/api/auth/login', (req, res) => {
 
   if (!isAllowedEmail(email) || !validateSharedPassword(password)) {
     return res.status(401).json({
-      error: `Use your @${authState.allowedDomain} email and the shared access password.`,
+      error: 'invalid credentials - Contact Eric Fowler for access',
     });
   }
 
