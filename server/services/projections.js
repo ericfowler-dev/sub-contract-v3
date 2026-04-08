@@ -109,8 +109,33 @@ function getLatestActualMonth(transactions = []) {
   return months[months.length - 1] || null;
 }
 
+function getCurrentCalendarMonth() {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  return Number.isFinite(year) && Number.isFinite(month) ? formatMonth(year, month) : null;
+}
+
+function shiftMonth(monthValue, offset) {
+  if (!/^\d{4}-\d{2}$/.test(monthValue || '')) return null;
+  const [year, month] = monthValue.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+
+  const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return formatMonth(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1);
+}
+
 function getProjectionStartMonth(transactions = []) {
-  return getLatestActualMonth(transactions);
+  const latestActualMonth = getLatestActualMonth(transactions);
+  const previousCalendarMonth = shiftMonth(getCurrentCalendarMonth(), -1);
+
+  // Keep the immediately prior month open for late projection entry.
+  return [latestActualMonth, previousCalendarMonth].filter(Boolean).sort()[0] || null;
 }
 
 function isProjectionMonthAllowed(monthValue, transactions = []) {
