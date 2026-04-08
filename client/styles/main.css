@@ -781,6 +781,10 @@ body {
   resize: vertical;
 }
 
+.proj-field .mapping-input.hidden {
+  display: none !important;
+}
+
 .proj-form-row-details {
   align-items: stretch;
 }

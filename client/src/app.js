@@ -1383,9 +1383,10 @@ const App = {
   // -- Projections --
   getProjectionFormContext() {
     const vendorSelect = document.getElementById('proj-vendor');
-    const selectedVendor = vendorSelect?.value && vendorSelect.value !== '__custom__'
-      ? this.normalizeProjectionVendorName(vendorSelect.value)
-      : '';
+    const customVendorInput = document.getElementById('proj-vendor-custom');
+    const selectedVendor = vendorSelect?.value === '__custom__'
+      ? this.normalizeProjectionVendorName(customVendorInput?.value)
+      : (vendorSelect?.value ? this.normalizeProjectionVendorName(vendorSelect.value) : '');
 
     return {
       month: document.getElementById('proj-month')?.value || '',
@@ -1426,6 +1427,48 @@ const App = {
     }
   },
 
+  syncProjectionVendorInput({ focusCustom = false } = {}) {
+    const vendorSelect = document.getElementById('proj-vendor');
+    const customVendorInput = document.getElementById('proj-vendor-custom');
+    if (!vendorSelect || !customVendorInput) return;
+
+    const isCustomVendor = vendorSelect.value === '__custom__';
+    customVendorInput.classList.toggle('hidden', !isCustomVendor);
+    customVendorInput.disabled = !isCustomVendor;
+    if (isCustomVendor) {
+      if (focusCustom) customVendorInput.focus();
+      return;
+    }
+
+    customVendorInput.value = '';
+  },
+
+  setProjectionVendorSelection(vendorName = '') {
+    const vendorSelect = document.getElementById('proj-vendor');
+    const customVendorInput = document.getElementById('proj-vendor-custom');
+    if (!vendorSelect || !customVendorInput) return;
+
+    const normalizedVendor = this.normalizeProjectionVendorName(vendorName);
+    const existingOption = normalizedVendor
+      ? [...vendorSelect.options].find(
+        opt => opt.value && opt.value !== '__custom__' && opt.value.toLowerCase() === normalizedVendor.toLowerCase(),
+      )
+      : null;
+
+    if (existingOption) {
+      vendorSelect.value = existingOption.value;
+      customVendorInput.value = '';
+    } else if (normalizedVendor) {
+      vendorSelect.value = '__custom__';
+      customVendorInput.value = normalizedVendor;
+    } else {
+      vendorSelect.value = '';
+      customVendorInput.value = '';
+    }
+
+    this.syncProjectionVendorInput();
+  },
+
   resetProjectionForm({ preserveContext = true } = {}) {
     const context = preserveContext ? this.getProjectionFormContext() : { month: '', baseJob: '', vendorName: '' };
 
@@ -1433,11 +1476,11 @@ const App = {
 
     const monthInput = document.getElementById('proj-month');
     const jobsiteSelect = document.getElementById('proj-jobsite');
-    const vendorSelect = document.getElementById('proj-vendor');
     const descriptionInput = document.getElementById('proj-description');
     const invoiceInput = document.getElementById('proj-invoice');
     const poInput = document.getElementById('proj-po');
     const quoteInput = document.getElementById('proj-quote');
+    const customVendorInput = document.getElementById('proj-vendor-custom');
     const amountInput = document.getElementById('proj-amount');
     const typeSelect = document.getElementById('proj-type');
 
@@ -1446,13 +1489,14 @@ const App = {
     if (invoiceInput) invoiceInput.value = '';
     if (poInput) poInput.value = '';
     if (quoteInput) quoteInput.value = '';
+    if (customVendorInput) customVendorInput.value = '';
     if (amountInput) amountInput.value = '';
     if (typeSelect) typeSelect.value = 'PUR-SUB';
 
     this.populateProjectionDropdowns();
 
     if (jobsiteSelect) jobsiteSelect.value = context.baseJob || '';
-    if (vendorSelect) vendorSelect.value = context.vendorName || '';
+    this.setProjectionVendorSelection(context.vendorName || '');
 
     this.syncProjectionFormState();
   },
@@ -1473,7 +1517,7 @@ const App = {
 
     this.populateProjectionDropdowns();
     document.getElementById('proj-jobsite').value = projection.baseJob || '';
-    document.getElementById('proj-vendor').value = this.normalizeProjectionVendorName(projection.vendorName) || '';
+    this.setProjectionVendorSelection(projection.vendorName || '');
 
     this.syncProjectionFormState();
     this.renderProjectionsTableState();
@@ -1496,8 +1540,12 @@ const App = {
   getProjectionFormPayload() {
     const month = document.getElementById('proj-month').value;
     const baseJob = document.getElementById('proj-jobsite').value;
-    const vendorValue = document.getElementById('proj-vendor').value;
-    const vendorName = vendorValue === '__custom__' ? '' : this.normalizeProjectionVendorName(vendorValue);
+    const vendorSelect = document.getElementById('proj-vendor');
+    const customVendorInput = document.getElementById('proj-vendor-custom');
+    const vendorValue = vendorSelect.value;
+    const vendorName = vendorValue === '__custom__'
+      ? this.normalizeProjectionVendorName(customVendorInput?.value)
+      : this.normalizeProjectionVendorName(vendorValue);
     const description = document.getElementById('proj-description').value.trim();
     const invoiceNumber = document.getElementById('proj-invoice').value.trim();
     const poNumber = document.getElementById('proj-po').value.trim();
@@ -1511,6 +1559,11 @@ const App = {
     }
     if (!(amount > 0)) {
       alert('Please enter a valid amount.');
+      return null;
+    }
+    if (vendorValue === '__custom__' && !vendorName) {
+      alert('Please type the vendor name.');
+      customVendorInput?.focus();
       return null;
     }
 
@@ -1638,6 +1691,7 @@ const App = {
   populateProjectionDropdowns() {
     const jobSelect = document.getElementById('proj-jobsite');
     const vendorSelect = document.getElementById('proj-vendor');
+    const customVendorInput = document.getElementById('proj-vendor-custom');
 
     // Jobsites
     if (jobSelect) {
@@ -1654,7 +1708,9 @@ const App = {
 
     // Vendors from actuals plus saved projections
     if (vendorSelect) {
-      const currentVendor = vendorSelect.value;
+      const currentVendor = vendorSelect.value === '__custom__'
+        ? ''
+        : this.normalizeProjectionVendorName(vendorSelect.value);
       const vendors = this.getProjectionVendorChoices(currentVendor);
       vendorSelect.innerHTML = '<option value="">-- Select Vendor --</option>';
       for (const vendorName of vendors) {
@@ -1668,28 +1724,14 @@ const App = {
       if (!vendorSelect.dataset.bound) {
         vendorSelect.dataset.bound = '1';
         vendorSelect.addEventListener('change', () => {
-          if (vendorSelect.value === '__custom__') {
-            const customVendor = this.normalizeProjectionVendorName(prompt('Enter vendor name:'));
-            if (customVendor) {
-              const existing = [...vendorSelect.options].find(
-                opt => opt.value && opt.value !== '__custom__' && opt.value.toLowerCase() === customVendor.toLowerCase(),
-              );
-              if (existing) {
-                vendorSelect.value = existing.value;
-                return;
-              }
-
-              const customOption = document.createElement('option');
-              customOption.value = customVendor;
-              customOption.textContent = customVendor;
-              vendorSelect.insertBefore(customOption, vendorSelect.querySelector('option[value="__custom__"]'));
-              vendorSelect.value = customVendor;
-            } else {
-              vendorSelect.value = '';
-            }
-          }
+          this.syncProjectionVendorInput({ focusCustom: vendorSelect.value === '__custom__' });
         });
       }
+
+      if (customVendorInput && vendorSelect.value !== '__custom__') {
+        customVendorInput.value = '';
+      }
+      this.syncProjectionVendorInput();
     }
   },
 
