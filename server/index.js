@@ -12,7 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Ensure data directories exist
-const dataDir = process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, 'data');
+const dataDir = path.join(__dirname, 'data');
 const uploadsDir = path.join(dataDir, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
