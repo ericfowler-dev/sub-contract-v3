@@ -1,5 +1,18 @@
 const XLSX = require('xlsx');
 
+const PROJECTION_TYPE_ALIASES = {
+  CREDIT: 'MFG-CUS',
+  CREDITS: 'MFG-CUS',
+  RECOVERABLE: 'MFG-CUS',
+  RECOVERABLES: 'MFG-CUS',
+  RECOVERY: 'MFG-CUS',
+  RECOVERIES: 'MFG-CUS',
+  REIMBURSEMENT: 'MFG-CUS',
+  REIMBURSEMENTS: 'MFG-CUS',
+  REIMBURSE: 'MFG-CUS',
+  REIMBURSED: 'MFG-CUS',
+};
+
 function parseProjectionImportFile(filePath, jobsiteMapping = {}) {
   const workbook = XLSX.readFile(filePath, { raw: true });
   const sheetName = workbook.SheetNames[0];
@@ -49,7 +62,7 @@ function parseProjectionImportFile(filePath, jobsiteMapping = {}) {
       poNumber: cleanText(getColumnValue(row, headers, ['ponumber', 'po', 'pono'])),
       quoteNumber: cleanText(getColumnValue(row, headers, ['quotenumber', 'quote', 'quoteno', 'quoteid'])),
       amount,
-      type: cleanText(getColumnValue(row, headers, ['type', 'transactiontype'])).toUpperCase() || 'PUR-SUB',
+      type: normalizeProjectionType(getColumnValue(row, headers, ['type', 'transactiontype'])) || 'PUR-SUB',
     };
 
     const rowNumber = i + 1;
@@ -57,8 +70,8 @@ function parseProjectionImportFile(filePath, jobsiteMapping = {}) {
       errors.push(`Row ${rowNumber}: invalid or missing Month.`);
       continue;
     }
-    if (!(item.amount > 0)) {
-      errors.push(`Row ${rowNumber}: Amount must be greater than zero.`);
+    if (!item.amount) {
+      errors.push(`Row ${rowNumber}: Amount must be non-zero.`);
       continue;
     }
 
@@ -79,8 +92,8 @@ function buildProjectionCsv(projections, jobsiteMapping = {}) {
     projection.invoiceNumber || '',
     projection.poNumber || '',
     projection.quoteNumber || '',
-    projection.type || 'PUR-SUB',
-    projection.amount || 0,
+    normalizeProjectionType(projection.type) || 'PUR-SUB',
+    normalizeProjectionAmount(projection.amount),
   ]);
 
   return [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\n');
@@ -95,9 +108,33 @@ function createProjectionImportKey(projection) {
     normalizeKey(projection.invoiceNumber),
     normalizeKey(projection.poNumber),
     normalizeKey(projection.quoteNumber),
-    normalizeKey(projection.type || 'PUR-SUB'),
-    Number(projection.amount || 0).toFixed(2),
+    normalizeKey(normalizeProjectionType(projection.type) || 'PUR-SUB'),
+    normalizeProjectionAmount(projection.amount).toFixed(2),
   ].join('|');
+}
+
+function normalizeProjectionType(value) {
+  const normalized = cleanText(value).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!normalized) return '';
+  return PROJECTION_TYPE_ALIASES[normalized] || normalized;
+}
+
+function isProjectionCreditType(type) {
+  return normalizeProjectionType(type) === 'MFG-CUS';
+}
+
+function normalizeProjectionAmount(value) {
+  const parsed = toNumber(value);
+  return Math.abs(parsed);
+}
+
+function getProjectionSignedAmount(projection = {}) {
+  const rawAmount = toNumber(projection.amount);
+  if (!rawAmount) return 0;
+  if (isProjectionCreditType(projection.type)) {
+    return -Math.abs(rawAmount);
+  }
+  return rawAmount;
 }
 
 function getLatestActualMonth(transactions = []) {
@@ -297,6 +334,10 @@ module.exports = {
   parseProjectionImportFile,
   buildProjectionCsv,
   createProjectionImportKey,
+  normalizeProjectionType,
+  isProjectionCreditType,
+  normalizeProjectionAmount,
+  getProjectionSignedAmount,
   getLatestActualMonth,
   getProjectionStartMonth,
   isProjectionMonthAllowed,

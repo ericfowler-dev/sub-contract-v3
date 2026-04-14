@@ -326,10 +326,50 @@ const App = {
       case 'type':
         return Fmt.typeLabel(projection.type || 'PUR-SUB');
       case 'amount':
-        return Number(projection.amount) || 0;
+        return this.getProjectionSignedAmount(projection);
       default:
         return '';
     }
+  },
+
+  normalizeProjectionType(type) {
+    const normalized = String(type ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!normalized) return '';
+
+    const aliases = {
+      CREDIT: 'MFG-CUS',
+      CREDITS: 'MFG-CUS',
+      RECOVERABLE: 'MFG-CUS',
+      RECOVERABLES: 'MFG-CUS',
+      RECOVERY: 'MFG-CUS',
+      RECOVERIES: 'MFG-CUS',
+      REIMBURSEMENT: 'MFG-CUS',
+      REIMBURSEMENTS: 'MFG-CUS',
+      REIMBURSE: 'MFG-CUS',
+      REIMBURSED: 'MFG-CUS',
+    };
+
+    return aliases[normalized] || normalized;
+  },
+
+  isCreditProjectionType(type) {
+    return this.normalizeProjectionType(type) === 'MFG-CUS';
+  },
+
+  getProjectionSignedAmount(projection = {}) {
+    const explicitSignedAmount = Number(projection?.signedAmount);
+    if (Number.isFinite(explicitSignedAmount) && explicitSignedAmount !== 0) {
+      return explicitSignedAmount;
+    }
+
+    const amount = Number(projection?.amount) || 0;
+    if (!amount) return 0;
+    return this.isCreditProjectionType(projection?.type) ? -Math.abs(amount) : amount;
   },
 
   getVendorSortValue(vendor, field) {
@@ -748,13 +788,13 @@ const App = {
           <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.poNumber || '--')}">${this.escapeHtml(p.poNumber || '--')}</td>
           <td class="ref-cell projected-ref-cell" title="${this.escapeHtml(p.quoteNumber || '--')}">${this.escapeHtml(p.quoteNumber || '--')}</td>
           <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type))}</span></td>
-          <td class="num">${Fmt.currencyFull(p.amount)}</td>
+          <td class="num">${Fmt.currencyFull(this.getProjectionSignedAmount(p))}</td>
         </tr>
       `).join('');
 
       if (summary) {
-        const totalProjectedAmount = sorted.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-        summary.textContent = `${Fmt.number(sorted.length)} projected cost${sorted.length === 1 ? '' : 's'} shown | ${Fmt.currencyFull(totalProjectedAmount)} total`;
+        const totalProjectedAmount = sorted.reduce((sum, item) => sum + this.getProjectionSignedAmount(item), 0);
+        summary.textContent = `${Fmt.number(sorted.length)} projected cost${sorted.length === 1 ? '' : 's'} shown | ${Fmt.currencyFull(totalProjectedAmount)} net impact`;
       }
     } catch (err) {
       this.filteredProjections = [];
@@ -1512,7 +1552,7 @@ const App = {
     document.getElementById('proj-invoice').value = projection.invoiceNumber || '';
     document.getElementById('proj-po').value = projection.poNumber || '';
     document.getElementById('proj-quote').value = projection.quoteNumber || '';
-    document.getElementById('proj-amount').value = projection.amount || '';
+    document.getElementById('proj-amount').value = Math.abs(Number(projection.amount) || 0) || '';
     document.getElementById('proj-type').value = projection.type || 'PUR-SUB';
 
     this.populateProjectionDropdowns();
@@ -1550,15 +1590,16 @@ const App = {
     const invoiceNumber = document.getElementById('proj-invoice').value.trim();
     const poNumber = document.getElementById('proj-po').value.trim();
     const quoteNumber = document.getElementById('proj-quote').value.trim();
-    const amount = parseFloat(document.getElementById('proj-amount').value);
-    const type = document.getElementById('proj-type').value;
+    const rawAmount = parseFloat(document.getElementById('proj-amount').value);
+    const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : NaN;
+    const type = this.normalizeProjectionType(document.getElementById('proj-type').value) || 'PUR-SUB';
 
     if (!month) {
       alert('Please select a month.');
       return null;
     }
     if (!(amount > 0)) {
-      alert('Please enter a valid amount.');
+      alert('Please enter a non-zero amount.');
       return null;
     }
     if (vendorValue === '__custom__' && !vendorName) {
@@ -1616,7 +1657,7 @@ const App = {
           <td class="projection-ref-cell">${this.escapeHtml(p.poNumber || '--')}</td>
           <td class="projection-ref-cell">${this.escapeHtml(p.quoteNumber || '--')}</td>
           <td><span class="badge badge-projected">${this.escapeHtml(Fmt.typeLabel(p.type || 'PUR-SUB'))}</span></td>
-          <td class="num">${Fmt.currency(p.amount)}</td>
+          <td class="num">${Fmt.currency(this.getProjectionSignedAmount(p))}</td>
           <td class="projection-actions-cell">
             <button class="btn btn-sm btn-secondary projection-edit" data-id="${p.id}">Edit</button>
             <button class="btn btn-sm btn-ghost projection-remove" data-id="${p.id}">Delete</button>
@@ -1625,11 +1666,11 @@ const App = {
       `).join('');
 
       // Total row
-      const total = items.reduce((s, p) => s + (p.amount || 0), 0);
+      const total = items.reduce((s, p) => s + this.getProjectionSignedAmount(p), 0);
       const byMonth = {};
-      items.forEach(p => { byMonth[p.month] = (byMonth[p.month] || 0) + p.amount; });
+      items.forEach(p => { byMonth[p.month] = (byMonth[p.month] || 0) + this.getProjectionSignedAmount(p); });
       const monthCount = Object.keys(byMonth).length;
-      totalDiv.innerHTML = `<strong>Total Projected:</strong> ${Fmt.currency(total)} across ${items.length} line items, ${monthCount} months`;
+      totalDiv.innerHTML = `<strong>Net Projected Impact:</strong> ${Fmt.currency(total)} across ${items.length} line items, ${monthCount} months`;
     }
 
     tbody.querySelectorAll('.projection-edit').forEach(btn => {
@@ -2046,7 +2087,7 @@ const App = {
         <td>${this.escapeHtml(p.poNumber || '--')}</td>
         <td>${this.escapeHtml(p.quoteNumber || '--')}</td>
         <td>${this.escapeHtml(Fmt.typeLabel(p.type))}</td>
-        <td class="num">${Fmt.currencyFull(p.amount)}</td>
+        <td class="num">${Fmt.currencyFull(this.getProjectionSignedAmount(p))}</td>
       </tr>
     `).join('');
 
@@ -2089,7 +2130,7 @@ const App = {
     const spendChart = this.canvasToImageDataUrl('chart-spend-over-time');
     const jobsiteChart = this.canvasToImageDataUrl('chart-jobsite-breakdown');
     const vendorTableHtml = document.getElementById('vendor-table-container').innerHTML || '<div class="report-empty">No vendor data available.</div>';
-    const totalProjectedAmount = projections.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const totalProjectedAmount = projections.reduce((sum, item) => sum + this.getProjectionSignedAmount(item), 0);
 
     return `
       <div class="report-root">
@@ -2122,7 +2163,7 @@ const App = {
             </section>
 
             <section class="report-card-wide">
-              <h2>Projected Costs (${Fmt.number(projections.length)} | ${Fmt.currencyFull(totalProjectedAmount)})</h2>
+              <h2>Projected Costs (${Fmt.number(projections.length)} | Net ${Fmt.currencyFull(totalProjectedAmount)})</h2>
               ${this.buildProjectionsReportTable(projections)}
             </section>
 

@@ -52,7 +52,7 @@ const Fmt = {
   typeLabel(type, includeCode = true) {
     const labels = {
       'PUR-SUB': 'Gross Spend',
-      'MFG-CUS': 'Credits',
+      'MFG-CUS': 'Credits / Recoveries',
       'MFG-VAR': 'Accounting Adj',
       'STK-MTL': 'Stock Material',
       'ADJ-PUR': 'Purchase Adj',

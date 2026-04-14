@@ -17,6 +17,10 @@ const {
   parseProjectionImportFile,
   buildProjectionCsv,
   createProjectionImportKey,
+  normalizeProjectionType,
+  isProjectionCreditType,
+  normalizeProjectionAmount,
+  getProjectionSignedAmount,
   getLatestActualMonth,
   getProjectionStartMonth,
   isProjectionMonthAllowed,
@@ -168,14 +172,20 @@ function extractProjectionReferences(description) {
 function normalizeProjection(projection) {
   const description = cleanText(projection.description);
   const derivedRefs = extractProjectionReferences(description);
+  const type = normalizeProjectionType(projection.type) || 'PUR-SUB';
+  const signedAmount = getProjectionSignedAmount({ ...projection, type });
 
   return {
     ...projection,
+    type,
+    amount: normalizeProjectionAmount(projection.amount),
     description,
     descriptionDisplay: derivedRefs.descriptionDisplay || description,
     invoiceNumber: cleanText(projection.invoiceNumber || projection.invoice) || derivedRefs.invoiceNumber,
     poNumber: cleanText(projection.poNumber || projection.po) || derivedRefs.poNumber,
     quoteNumber: cleanText(projection.quoteNumber || projection.quote),
+    signedAmount,
+    isCredit: isProjectionCreditType(type),
   };
 }
 
@@ -195,8 +205,8 @@ function sanitizeProjectionInput(input = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'quoteNumber') || Object.prototype.hasOwnProperty.call(input, 'quote')) {
     sanitized.quoteNumber = cleanText(input.quoteNumber ?? input.quote);
   }
-  if (Object.prototype.hasOwnProperty.call(input, 'amount')) sanitized.amount = Number(input.amount) || 0;
-  if (Object.prototype.hasOwnProperty.call(input, 'type')) sanitized.type = cleanText(input.type) || 'PUR-SUB';
+  if (Object.prototype.hasOwnProperty.call(input, 'type')) sanitized.type = normalizeProjectionType(input.type) || 'PUR-SUB';
+  if (Object.prototype.hasOwnProperty.call(input, 'amount')) sanitized.amount = normalizeProjectionAmount(input.amount);
 
   return sanitized;
 }
@@ -253,9 +263,10 @@ router.get('/spend-over-time', (req, res) => {
   // Aggregate projected line items by month
   const projByMonth = {};
   for (const p of filteredProjections) {
-    if (!p.month || !p.amount) continue;
+    const signedAmount = getProjectionSignedAmount(p);
+    if (!p.month || !signedAmount) continue;
     if (!projByMonth[p.month]) projByMonth[p.month] = 0;
-    projByMonth[p.month] += p.amount;
+    projByMonth[p.month] += signedAmount;
   }
 
   // Merge into timeline
@@ -360,7 +371,7 @@ router.get('/filter-options', (req, res) => {
 
   const types = [...new Set([
     ...txns.map(t => t.type),
-    ...projections.map(p => cleanText(p.type)).filter(Boolean),
+    ...projections.map(p => normalizeProjectionType(p.type)).filter(Boolean),
   ])].sort();
 
   const dates = [
@@ -517,8 +528,8 @@ router.post('/projections', (req, res) => {
         : 'Projected month must be in YYYY-MM format.',
     });
   }
-  if (!(p.amount > 0)) {
-    return res.status(400).json({ error: 'Amount must be greater than zero.' });
+  if (!p.amount) {
+    return res.status(400).json({ error: 'Amount must be non-zero.' });
   }
   const item = createProjectionRecord(p);
   db.projections.push(item);
@@ -536,8 +547,8 @@ router.put('/projections/:id', (req, res) => {
   if (Object.prototype.hasOwnProperty.call(updates, 'month') && updates.month && !/^\d{4}-\d{2}$/.test(updates.month)) {
     return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
   }
-  if (Object.prototype.hasOwnProperty.call(updates, 'amount') && !(updates.amount > 0)) {
-    return res.status(400).json({ error: 'Amount must be greater than zero.' });
+  if (Object.prototype.hasOwnProperty.call(updates, 'amount') && !updates.amount) {
+    return res.status(400).json({ error: 'Amount must be non-zero.' });
   }
   const nextProjection = { ...db.projections[idx], ...updates };
   const projectionStartMonth = getProjectionStartMonth(db.transactions);

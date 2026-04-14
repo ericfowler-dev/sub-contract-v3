@@ -186,7 +186,7 @@ const ChartConfigs = {
         },
       },
       {
-        label: 'Avg. Gross + Proj / month',
+        label: 'Avg. Gross + Net Proj / month',
         data: buildFlatLineData(data.length, avgGrossSpend),
         type: 'line',
         yAxisID: 'yMonthly',
@@ -198,9 +198,10 @@ const ChartConfigs = {
         pointHoverRadius: 0,
         tension: 0,
         order: 1,
+        hidden: true,
         endLabel: {
           color: COLORS.avgGross,
-          text: () => `Avg Gross + Proj ${Fmt.currency(avgGrossSpend)}`,
+          text: () => `Avg Gross + Net Proj ${Fmt.currency(avgGrossSpend)}`,
         },
       },
       {
@@ -228,7 +229,7 @@ const ChartConfigs = {
 
     if (data.some((row) => row.projected !== null)) {
       datasets.push({
-        label: 'Projected Cost',
+        label: 'Net Projected Impact',
         data: data.map((row) => row.projected),
         backgroundColor: 'rgba(239, 68, 68, 0.84)',
         borderColor: COLORS.danger,

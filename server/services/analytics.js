@@ -1,3 +1,5 @@
+const { getProjectionSignedAmount } = require('./projections');
+
 function computeSummary(transactions, jobsiteMapping, projections = []) {
   if (!transactions.length && !projections.length) {
     return {
@@ -19,7 +21,7 @@ function computeSummary(transactions, jobsiteMapping, projections = []) {
   const totalGrossSpend = sum(purSub, 'debit');
   const totalCustomerCredits = Math.abs(sum(mfgCus, 'net'));
   const totalAccountingAdj = Math.abs(sum(mfgVar, 'net'));
-  const totalProjectedCost = sum(projections, 'amount');
+  const totalProjectedCost = sumProjectionImpact(projections);
   const netCostToPSI = sum(transactions, 'net') + totalProjectedCost;
 
   // Active in last 90 days
@@ -226,6 +228,10 @@ function applyProjectionFilters(projections, filters) {
 
 function sum(arr, field) {
   return arr.reduce((s, t) => s + (t[field] || 0), 0);
+}
+
+function sumProjectionImpact(projections) {
+  return projections.reduce((sum, projection) => sum + getProjectionSignedAmount(projection), 0);
 }
 
 function round2(n) {
