@@ -79,7 +79,7 @@ const spendOverTimeEndLabels = {
       if (!endLabel) return;
 
       const meta = chart.getDatasetMeta(datasetIndex);
-      if (!meta || meta.hidden) return;
+      if (!meta || dataset.hidden || !chart.isDatasetVisible(datasetIndex) || meta.hidden) return;
 
       const pointIndex = lastNumericIndex(dataset.data);
       if (pointIndex === -1 || !meta.data?.[pointIndex]) return;
