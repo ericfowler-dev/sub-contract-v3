@@ -2,7 +2,7 @@ services:
   - type: web
     name: psi-subcontract-dashboard
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm install
     startCommand: node server/index.js
     envVars:
@@ -18,3 +18,7 @@ services:
         generateValue: true
       - key: AUTH_SESSION_SECRET
         generateValue: true
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
