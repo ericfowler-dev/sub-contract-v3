@@ -2,7 +2,9 @@ const XLSX = require('xlsx');
 const { normalizeRow } = require('./normalization');
 
 function parseExcelFile(filePath) {
-  const workbook = XLSX.readFile(filePath);
+  // XLSX files are compressed archives. Parsing every worksheet can consume
+  // many times the uploaded file size, so only inflate the sheet we ingest.
+  const workbook = XLSX.readFile(filePath, { sheets: 'SubContract Detail' });
 
   if (!workbook.SheetNames.includes('SubContract Detail')) {
     throw new Error('Sheet "SubContract Detail" not found. Available sheets: ' + workbook.SheetNames.join(', '));

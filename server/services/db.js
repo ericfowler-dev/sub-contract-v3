@@ -31,7 +31,9 @@ function loadDb(dataDir) {
 function saveDb(dataDir, data) {
   const dbPath = getDbPath(dataDir);
   dbCache = data;
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf-8');
+  // Pretty-printing materially increases both the temporary string allocation
+  // and the on-disk database size for large transaction collections.
+  fs.writeFileSync(dbPath, JSON.stringify(data), 'utf-8');
 }
 
 function invalidateCache() {

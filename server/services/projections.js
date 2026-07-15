@@ -138,12 +138,18 @@ function getProjectionSignedAmount(projection = {}) {
 }
 
 function getLatestActualMonth(transactions = []) {
-  const months = transactions
-    .map((transaction) => cleanText(transaction?.date).slice(0, 7))
-    .filter((value) => /^\d{4}-\d{2}$/.test(value))
-    .sort();
+  let latestMonth = null;
 
-  return months[months.length - 1] || null;
+  // Find the maximum in one pass instead of allocating and sorting an array
+  // proportional to the complete transaction history.
+  for (const transaction of transactions) {
+    const month = cleanText(transaction?.date).slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(month) && (!latestMonth || month > latestMonth)) {
+      latestMonth = month;
+    }
+  }
+
+  return latestMonth;
 }
 
 function getCurrentCalendarMonth() {
@@ -196,7 +202,8 @@ function pruneStaleProjections(projections = [], transactions = []) {
   let removed = 0;
 
   for (const projection of items) {
-    if (isProjectionMonthAllowed(projection?.month, transactions)) {
+    const month = projection?.month || '';
+    if (/^\d{4}-\d{2}$/.test(month) && month >= projectionStartMonth) {
       valid.push(projection);
     } else {
       removed++;

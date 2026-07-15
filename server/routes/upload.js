@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const fs = require('fs');
 const path = require('path');
 const { parseExcelFile } = require('../services/ingestion');
 const { loadDb, saveDb } = require('../services/db');
@@ -31,13 +32,14 @@ const upload = multer({
 });
 
 router.post('/', upload.single('file'), (req, res) => {
+  const filePath = req.file?.path;
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const mode = req.body.mode || 'append'; // 'append' or 'replace'
-    const filePath = req.file.path;
     const fileName = req.file.originalname;
 
     // Parse the Excel file
@@ -47,26 +49,30 @@ router.post('/', upload.single('file'), (req, res) => {
 
     let added = 0;
     let skipped = 0;
+    const ingestedAt = new Date().toISOString();
 
     if (mode === 'replace') {
-      db.transactions = newRows.map(r => ({
-        ...r,
-        fileSource: fileName,
-        ingestedAt: new Date().toISOString(),
-      }));
+      // Reuse parsed row objects instead of allocating a second full collection.
+      for (const row of newRows) {
+        row.fileSource = fileName;
+        row.ingestedAt = ingestedAt;
+      }
+      db.transactions = newRows;
       added = newRows.length;
     } else {
       // Append with dedup
-      const existingKeys = new Set(db.transactions.map(t => t.compositeKey));
+      const existingKeys = new Set();
+      for (const transaction of db.transactions) {
+        existingKeys.add(transaction.compositeKey);
+      }
+
       for (const row of newRows) {
         if (existingKeys.has(row.compositeKey)) {
           skipped++;
         } else {
-          db.transactions.push({
-            ...row,
-            fileSource: fileName,
-            ingestedAt: new Date().toISOString(),
-          });
+          row.fileSource = fileName;
+          row.ingestedAt = ingestedAt;
+          db.transactions.push(row);
           existingKeys.add(row.compositeKey);
           added++;
         }
@@ -111,6 +117,18 @@ router.post('/', upload.single('file'), (req, res) => {
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: err.message });
+  } finally {
+    // Uploads are only staging files. Keep them off the persistent disk after
+    // both successful ingestion and recoverable parsing/database failures.
+    if (filePath) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupErr) {
+        if (cleanupErr.code !== 'ENOENT') {
+          console.error(`Unable to remove uploaded file ${filePath}:`, cleanupErr);
+        }
+      }
+    }
   }
 });
 
