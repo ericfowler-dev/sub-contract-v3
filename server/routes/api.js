@@ -22,9 +22,7 @@ const {
   normalizeProjectionAmount,
   getProjectionSignedAmount,
   getLatestActualMonth,
-  getProjectionStartMonth,
-  isProjectionMonthAllowed,
-  pruneStaleProjections,
+  isValidProjectionMonth,
 } = require('../services/projections');
 
 const router = express.Router();
@@ -233,12 +231,8 @@ function createProjectionRecord(input = {}) {
 }
 
 function syncValidProjections(req, db) {
-  const projectionState = pruneStaleProjections(db.projections || [], db.transactions || []);
-  if (projectionState.removed) {
-    db.projections = projectionState.projections;
-    saveDb(req.app.locals.dataDir, db);
-  }
-  return projectionState;
+  if (!Array.isArray(db.projections)) db.projections = [];
+  return { projections: db.projections };
 }
 
 // GET /api/summary
@@ -350,7 +344,6 @@ router.get('/filter-options', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   const txns = db.transactions;
   const latestActualMonth = getLatestActualMonth(txns);
-  const projectionStartMonth = getProjectionStartMonth(txns);
   const projections = Array.isArray(db.projections) ? db.projections : [];
 
   const jobsites = [...new Set([
@@ -388,7 +381,6 @@ router.get('/filter-options', (req, res) => {
       max: dates[dates.length - 1] || null,
     },
     latestActualMonth,
-    projectionStartMonth,
   });
 });
 
@@ -450,8 +442,7 @@ router.post('/projections/import', (req, res) => {
       const mode = req.body.mode === 'replace' ? 'replace' : 'append';
       const db = loadDb(req.app.locals.dataDir);
       if (!Array.isArray(db.projections)) db.projections = [];
-      const projectionState = syncValidProjections(req, db);
-      const projectionStartMonth = projectionState.projectionStartMonth;
+      syncValidProjections(req, db);
 
       const parsed = parseProjectionImportFile(uploadedPath, db.jobsiteMapping);
       if (!parsed.rows.length && !parsed.errors.length) {
@@ -463,9 +454,7 @@ router.post('/projections/import', (req, res) => {
         });
       }
 
-      const eligibleRows = parsed.rows.filter((row) => isProjectionMonthAllowed(row.month, db.transactions));
-      const rowsSkippedPastMonths = parsed.rows.length - eligibleRows.length;
-      const importedItems = eligibleRows.map(createProjectionRecord);
+      const importedItems = parsed.rows.map(createProjectionRecord);
 
       let rowsAdded = 0;
       let rowsSkippedDuplicates = 0;
@@ -495,11 +484,9 @@ router.post('/projections/import', (req, res) => {
         fileName: req.file.originalname,
         rowsParsed: parsed.rows.length,
         rowsAdded,
-        rowsSkipped: rowsSkippedDuplicates + rowsSkippedPastMonths,
+        rowsSkipped: rowsSkippedDuplicates,
         rowsSkippedDuplicates,
-        rowsSkippedPastMonths,
         totalRows: db.projections.length,
-        projectionStartMonth,
       });
     } catch (err) {
       console.error('Projection import error:', err);
@@ -517,16 +504,8 @@ router.post('/projections', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
   if (!Array.isArray(db.projections)) db.projections = [];
   const p = sanitizeProjectionInput(req.body);
-  const projectionStartMonth = getProjectionStartMonth(db.transactions);
-  if (!/^\d{4}-\d{2}$/.test(p.month || '')) {
+  if (!isValidProjectionMonth(p.month)) {
     return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
-  }
-  if (!isProjectionMonthAllowed(p.month, db.transactions)) {
-    return res.status(400).json({
-      error: projectionStartMonth
-        ? `Projected month must be ${projectionStartMonth} or later.`
-        : 'Projected month must be in YYYY-MM format.',
-    });
   }
   if (!p.amount) {
     return res.status(400).json({ error: 'Amount must be non-zero.' });
@@ -544,20 +523,15 @@ router.put('/projections/:id', (req, res) => {
   const idx = db.projections.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Projection not found' });
   const updates = sanitizeProjectionInput(req.body);
-  if (Object.prototype.hasOwnProperty.call(updates, 'month') && updates.month && !/^\d{4}-\d{2}$/.test(updates.month)) {
+  if (Object.prototype.hasOwnProperty.call(updates, 'month') && !isValidProjectionMonth(updates.month)) {
     return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'amount') && !updates.amount) {
     return res.status(400).json({ error: 'Amount must be non-zero.' });
   }
   const nextProjection = { ...db.projections[idx], ...updates };
-  const projectionStartMonth = getProjectionStartMonth(db.transactions);
-  if (!isProjectionMonthAllowed(nextProjection.month, db.transactions)) {
-    return res.status(400).json({
-      error: projectionStartMonth
-        ? `Projected month must be ${projectionStartMonth} or later.`
-        : 'Projected month must be in YYYY-MM format.',
-    });
+  if (!isValidProjectionMonth(nextProjection.month)) {
+    return res.status(400).json({ error: 'Expected month in YYYY-MM format.' });
   }
   Object.assign(db.projections[idx], updates);
   // Recalculate year/monthNum if month changed
@@ -596,7 +570,6 @@ router.get('/metadata', (req, res) => {
     ...db.metadata,
     appVersion: packageJson.version,
     latestActualMonth: getLatestActualMonth(db.transactions),
-    projectionStartMonth: projectionState.projectionStartMonth,
     totalProjections: projectionState.projections.length,
   });
 });

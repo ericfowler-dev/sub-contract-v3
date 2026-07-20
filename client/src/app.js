@@ -523,23 +523,35 @@ const App = {
   },
 
   normalizeMonthValue(value) {
-    return /^\d{4}-\d{2}$/.test(value || '') ? value : null;
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(value || '') ? value : null;
+  },
+
+  getYearToDateRange() {
+    const now = new Date();
+    const year = now.getFullYear();
+    return {
+      startDate: `${year}-01`,
+      endDate: `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+    };
   },
 
   hydrateFiltersFromUrl() {
     const params = new URLSearchParams(window.location.search);
+    const yearToDate = this.getYearToDateRange();
     const parseList = (key) => {
       const value = params.get(key);
       return value ? value.split(',').filter(Boolean) : null;
     };
 
+    const useAllDates = params.get('range') === 'all';
+
     this.filters = {
-      startDate: this.normalizeMonthValue(params.get('start')),
-      endDate: this.normalizeMonthValue(params.get('end')),
+      startDate: useAllDates ? null : (this.normalizeMonthValue(params.get('start')) || yearToDate.startDate),
+      endDate: useAllDates ? null : (this.normalizeMonthValue(params.get('end')) || yearToDate.endDate),
       jobsites: parseList('jobsites'),
       vendors: parseList('vendors'),
       types: parseList('types'),
-      excludeRock: params.get('excludeRock') === '1',
+      excludeRock: params.has('excludeRock') ? params.get('excludeRock') === '1' : true,
     };
   },
 
@@ -547,10 +559,11 @@ const App = {
     const params = new URLSearchParams();
     if (this.filters.startDate) params.set('start', this.filters.startDate);
     if (this.filters.endDate) params.set('end', this.filters.endDate);
+    if (!this.filters.startDate && !this.filters.endDate) params.set('range', 'all');
     if (this.filters.jobsites?.length) params.set('jobsites', this.filters.jobsites.join(','));
     if (this.filters.vendors?.length) params.set('vendors', this.filters.vendors.join(','));
     if (this.filters.types?.length) params.set('types', this.filters.types.join(','));
-    if (this.filters.excludeRock) params.set('excludeRock', '1');
+    params.set('excludeRock', this.filters.excludeRock ? '1' : '0');
 
     const query = params.toString();
     const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
@@ -620,7 +633,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.5.2';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.6.0';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -1017,6 +1030,13 @@ const App = {
     });
 
     this.updateRockExclusionButton();
+
+    const yearToDate = this.getYearToDateRange();
+    const isYearToDate = this.filters.startDate === yearToDate.startDate
+      && this.filters.endDate === yearToDate.endDate;
+    document.querySelectorAll('.quick-filter').forEach(button => {
+      button.classList.toggle('active', button.dataset.range === 'ytd' && isYearToDate);
+    });
   },
 
   getFiltersFromControls() {
@@ -1031,12 +1051,10 @@ const App = {
     const allJobsites = document.querySelectorAll('.ms-item[data-prefix="jobsite"]').length;
     const allVendors = document.querySelectorAll('.ms-item[data-prefix="vendor"]').length;
     const allTypes = document.querySelectorAll('#filter-types input').length;
-    const defaultStart = this.filterOptions.dateRange.min?.substring(0, 7) || '';
-    const defaultEnd = this.filterOptions.dateRange.max?.substring(0, 7) || '';
 
     return {
-      startDate: startDate && startDate !== defaultStart ? startDate : null,
-      endDate: endDate && endDate !== defaultEnd ? endDate : null,
+      startDate: startDate || null,
+      endDate: endDate || null,
       jobsites: selectedJobsites.length && selectedJobsites.length < allJobsites ? selectedJobsites : null,
       vendors: selectedVendors.length && selectedVendors.length < allVendors ? selectedVendors : null,
       types: selectedTypes.length && selectedTypes.length < allTypes ? selectedTypes : null,
@@ -1177,9 +1195,6 @@ const App = {
         const data = await res.json();
 
         if (data.success) {
-          const staleProjectionText = data.staleProjectionsRemoved
-            ? `<br>Stale projections cleared: ${data.staleProjectionsRemoved}`
-            : '';
           result.className = 'upload-result success';
           result.innerHTML = `
             <strong>Upload Successful</strong><br>
@@ -1188,7 +1203,6 @@ const App = {
             Rows added: ${data.rowsAdded}<br>
             Duplicates skipped: ${data.rowsSkipped}<br>
             Total rows in database: ${data.totalRows}
-            ${staleProjectionText}
           `;
           // Refresh dashboard
           await this.loadFilterOptions();
@@ -1395,29 +1409,23 @@ const App = {
   updateProjectionWindowNote() {
     const note = document.getElementById('projection-window-note');
     const monthInput = document.getElementById('proj-month');
-    const projectionStartMonth = this.metadata?.projectionStartMonth || this.filterOptions?.projectionStartMonth || '';
     const latestActualMonth = this.metadata?.latestActualMonth || this.filterOptions?.latestActualMonth || '';
 
     if (monthInput) {
-      monthInput.min = projectionStartMonth || '';
-      if (!monthInput.value && projectionStartMonth) {
-        monthInput.value = projectionStartMonth;
+      monthInput.removeAttribute('min');
+      if (!monthInput.value && latestActualMonth) {
+        monthInput.value = latestActualMonth;
       }
     }
 
     if (!note) return;
 
-    if (projectionStartMonth && latestActualMonth) {
-      note.textContent = `Latest actual month: ${Fmt.monthLabel(latestActualMonth)}. Projections can be added for ${Fmt.monthLabel(projectionStartMonth)} or later.`;
+    if (latestActualMonth) {
+      note.textContent = `Latest actual month: ${Fmt.monthLabel(latestActualMonth)}. Projected costs can be added for any month and year.`;
       return;
     }
 
-    if (projectionStartMonth) {
-      note.textContent = `Projections can be added for ${Fmt.monthLabel(projectionStartMonth)} or later.`;
-      return;
-    }
-
-    note.textContent = 'No uploaded actuals yet. Projections can start with any month.';
+    note.textContent = 'Projected costs can be added for any month and year.';
   },
 
   // -- Projections --
@@ -1807,19 +1815,8 @@ const App = {
       if (data.rowsSkippedDuplicates) {
         skippedParts.push(`${data.rowsSkippedDuplicates} duplicate row${data.rowsSkippedDuplicates === 1 ? '' : 's'}`);
       }
-      if (data.rowsSkippedPastMonths) {
-        const monthLabel = data.projectionStartMonth ? Fmt.monthLabel(data.projectionStartMonth) : '';
-        skippedParts.push(
-          monthLabel
-            ? `${data.rowsSkippedPastMonths} row${data.rowsSkippedPastMonths === 1 ? '' : 's'} before ${monthLabel}`
-            : `${data.rowsSkippedPastMonths} past-month row${data.rowsSkippedPastMonths === 1 ? '' : 's'}`,
-        );
-      }
       const skippedText = skippedParts.length ? ` Skipped ${skippedParts.join(' and ')}.` : '';
-      const guidanceText = data.rowsSkippedPastMonths && data.projectionStartMonth
-        ? ` Only ${Fmt.monthLabel(data.projectionStartMonth)} or later can be imported right now.`
-        : '';
-      this.setProjectionStatus(`${rowsAddedText}${skippedText}${guidanceText}`, 'saved', 7000);
+      this.setProjectionStatus(`${rowsAddedText}${skippedText}`, 'saved', 7000);
       await this.refreshAfterProjectionChange();
     } catch (err) {
       console.error('Failed to import projections:', err);
@@ -1833,12 +1830,6 @@ const App = {
   async submitProjectionForm() {
     const payload = this.getProjectionFormPayload();
     if (!payload) return;
-
-    const projectionStartMonth = this.metadata?.projectionStartMonth || this.filterOptions?.projectionStartMonth || '';
-    if (projectionStartMonth && payload.month < projectionStartMonth) {
-      alert(`Projected month must be ${Fmt.monthLabel(projectionStartMonth)} or later.`);
-      return;
-    }
 
     if (this.editingProjectionId) {
       await this.updateProjection(this.editingProjectionId, payload);

@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const { parseExcelFile } = require('../services/ingestion');
 const { loadDb, saveDb } = require('../services/db');
-const { pruneStaleProjections } = require('../services/projections');
 
 const router = express.Router();
 
@@ -98,9 +97,6 @@ router.post('/', upload.single('file'), (req, res) => {
       }
     }
 
-    const projectionState = pruneStaleProjections(db.projections || [], db.transactions || []);
-    db.projections = projectionState.projections;
-
     saveDb(req.app.locals.dataDir, db);
 
     res.json({
@@ -111,8 +107,6 @@ router.post('/', upload.single('file'), (req, res) => {
       rowsAdded: added,
       rowsSkipped: skipped,
       totalRows: db.transactions.length,
-      staleProjectionsRemoved: projectionState.removed,
-      projectionStartMonth: projectionState.projectionStartMonth,
     });
   } catch (err) {
     console.error('Upload error:', err);

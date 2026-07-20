@@ -152,65 +152,8 @@ function getLatestActualMonth(transactions = []) {
   return latestMonth;
 }
 
-function getCurrentCalendarMonth() {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    year: 'numeric',
-    month: '2-digit',
-  });
-  const parts = formatter.formatToParts(new Date());
-  const year = Number(parts.find((part) => part.type === 'year')?.value);
-  const month = Number(parts.find((part) => part.type === 'month')?.value);
-  return Number.isFinite(year) && Number.isFinite(month) ? formatMonth(year, month) : null;
-}
-
-function shiftMonth(monthValue, offset) {
-  if (!/^\d{4}-\d{2}$/.test(monthValue || '')) return null;
-  const [year, month] = monthValue.split('-').map(Number);
-  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
-
-  const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
-  return formatMonth(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1);
-}
-
-function getProjectionStartMonth(transactions = []) {
-  const latestActualMonth = getLatestActualMonth(transactions);
-  const previousCalendarMonth = shiftMonth(getCurrentCalendarMonth(), -1);
-
-  // Keep the immediately prior month open for late projection entry.
-  return [latestActualMonth, previousCalendarMonth].filter(Boolean).sort()[0] || null;
-}
-
-function isProjectionMonthAllowed(monthValue, transactions = []) {
-  if (!/^\d{4}-\d{2}$/.test(monthValue || '')) return false;
-
-  const projectionStartMonth = getProjectionStartMonth(transactions);
-  if (!projectionStartMonth) return true;
-
-  return monthValue >= projectionStartMonth;
-}
-
-function pruneStaleProjections(projections = [], transactions = []) {
-  const projectionStartMonth = getProjectionStartMonth(transactions);
-  const items = Array.isArray(projections) ? projections : [];
-
-  if (!projectionStartMonth) {
-    return { projections: items, removed: 0, projectionStartMonth };
-  }
-
-  const valid = [];
-  let removed = 0;
-
-  for (const projection of items) {
-    const month = projection?.month || '';
-    if (/^\d{4}-\d{2}$/.test(month) && month >= projectionStartMonth) {
-      valid.push(projection);
-    } else {
-      removed++;
-    }
-  }
-
-  return { projections: valid, removed, projectionStartMonth };
+function isValidProjectionMonth(monthValue) {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(monthValue || '');
 }
 
 function normalizeHeader(value) {
@@ -245,7 +188,7 @@ function toMonthValue(value) {
   }
 
   const text = cleanText(value);
-  if (/^\d{4}-\d{2}$/.test(text)) return text;
+  if (isValidProjectionMonth(text)) return text;
   if (/^\d{4}\/\d{1,2}$/.test(text)) {
     const [year, month] = text.split('/').map(Number);
     return formatMonth(year, month);
@@ -303,7 +246,8 @@ function normalizeKey(value) {
 }
 
 function formatMonth(year, month) {
-  if (!year || !month) return '';
+  if (!Number.isInteger(year) || year < 1000 || year > 9999) return '';
+  if (!Number.isInteger(month) || month < 1 || month > 12) return '';
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
@@ -346,7 +290,5 @@ module.exports = {
   normalizeProjectionAmount,
   getProjectionSignedAmount,
   getLatestActualMonth,
-  getProjectionStartMonth,
-  isProjectionMonthAllowed,
-  pruneStaleProjections,
+  isValidProjectionMonth,
 };

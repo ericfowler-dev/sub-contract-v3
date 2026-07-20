@@ -1,6 +1,6 @@
 {
   "name": "psi-subcontract-dashboard",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "PSI Field Service Sub-Contract Expenditure Dashboard",
   "main": "server/index.js",
   "scripts": {
