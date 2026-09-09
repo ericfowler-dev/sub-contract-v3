@@ -51,6 +51,7 @@ function getFilters(query) {
     vendors: query.vendors ? query.vendors.split(',') : null,
     types: query.types ? query.types.split(',') : null,
     excludeVendors: query.excludeVendors ? query.excludeVendors.split(',') : null,
+    excludeWipTransfers: query.excludeWipTransfers === '1',
   };
 }
 

@@ -1,6 +1,17 @@
 const { getProjectionSignedAmount } = require('./projections');
 
+function isWipTransfer(transaction) {
+  return transaction.type === 'MFG-VAR' && /^purge\s+wip\s+to\s+(variance|cost\s+of\s+sales)\b/i.test(String(transaction.ref || '').trim());
+}
+
+function costTransactions(transactions) {
+  return transactions.filter(transaction => !isWipTransfer(transaction));
+}
+
 function computeSummary(transactions, jobsiteMapping, projections = []) {
+  const transfers = transactions.filter(isWipTransfer);
+  const excludedWipTransfers = Math.abs(sum(transfers, 'net'));
+  transactions = costTransactions(transactions);
   if (!transactions.length && !projections.length) {
     return {
       totalGrossSpend: 0,
@@ -11,6 +22,8 @@ function computeSummary(transactions, jobsiteMapping, projections = []) {
       activeVendors: 0,
       dateRange: { start: null, end: null },
       totalRows: 0,
+      excludedWipTransfers: round2(excludedWipTransfers),
+      excludedWipTransferCount: transfers.length,
     };
   }
 
@@ -44,10 +57,13 @@ function computeSummary(transactions, jobsiteMapping, projections = []) {
     activeVendors,
     dateRange: { start: allDates[0] || null, end: allDates[allDates.length - 1] || null },
     totalRows: transactions.length,
+    excludedWipTransfers: round2(excludedWipTransfers),
+    excludedWipTransferCount: transfers.length,
   };
 }
 
 function computeSpendOverTime(transactions) {
+  transactions = costTransactions(transactions);
   const byMonth = {};
   for (const t of transactions) {
     const key = `${t.year}-${String(t.month).padStart(2, '0')}`;
@@ -76,6 +92,7 @@ function computeSpendOverTime(transactions) {
 }
 
 function computeJobsiteBreakdown(transactions, jobsiteMapping) {
+  transactions = costTransactions(transactions);
   // Group by SITE NAME (not base job) so duplicate sites are combined
   const bySite = {};
   for (const t of transactions) {
@@ -154,6 +171,7 @@ function computeVendorAnalysis(transactions) {
 }
 
 function computeTypeBreakdown(transactions) {
+  transactions = costTransactions(transactions);
   const byType = {};
   for (const t of transactions) {
     const key = `${t.year}-${String(t.month).padStart(2, '0')}`;
@@ -176,6 +194,8 @@ function computeTypeBreakdown(transactions) {
 
 function applyFilters(transactions, filters) {
   let result = transactions;
+
+  if (filters.excludeWipTransfers) result = costTransactions(result);
 
   if (filters.startDate) {
     result = result.filter(t => t.date >= filters.startDate);
@@ -256,6 +276,8 @@ function normalizeVendorText(value) {
 }
 
 module.exports = {
+  isWipTransfer,
+  costTransactions,
   computeSummary,
   computeSpendOverTime,
   computeJobsiteBreakdown,

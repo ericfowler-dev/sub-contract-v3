@@ -633,7 +633,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.7.0';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.7.1';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
@@ -643,7 +643,7 @@ const App = {
   renderKPIs(data) {
     document.getElementById('kpi-gross-spend').textContent = Fmt.currency(data.totalGrossSpend);
     document.getElementById('kpi-customer-credits').textContent = Fmt.currency(data.totalCustomerCredits);
-    document.getElementById('kpi-accounting-adj').textContent = Fmt.currency(data.totalAccountingAdj);
+    document.getElementById('kpi-accounting-adj').textContent = Fmt.currency(data.excludedWipTransfers);
     document.getElementById('kpi-net-cost').textContent = Fmt.currency(data.netCostToPSI);
 
     const dateRange = document.getElementById('kpi-date-range');
@@ -652,7 +652,7 @@ const App = {
     } else {
       dateRange.textContent = '--';
     }
-    document.getElementById('kpi-total-rows').textContent = `${Fmt.number(data.totalRows)} transactions`;
+    document.getElementById('kpi-total-rows').textContent = `${Fmt.number(data.totalRows)} cost transactions; ${Fmt.number(data.excludedWipTransferCount || 0)} WIP transfers excluded`;
   },
 
   // -- Charts --
@@ -1985,7 +1985,7 @@ const App = {
     return [
       { label: 'Total Gross Spend', value: document.getElementById('kpi-gross-spend').textContent },
       { label: 'Credits', value: document.getElementById('kpi-customer-credits').textContent },
-      { label: 'Accounting Adjustments', value: document.getElementById('kpi-accounting-adj').textContent },
+      { label: 'WIP Transfers (Excluded)', value: document.getElementById('kpi-accounting-adj').textContent },
       { label: 'Net Cost to PSI', value: document.getElementById('kpi-net-cost').textContent },
     ];
   },
@@ -2129,7 +2129,7 @@ const App = {
           <div class="report-header">
             <div class="report-title">
               <h1>PSI Sub-Contract Dashboard Report</h1>
-              <p>Snapshot of the currently selected dashboard view.</p>
+              <p>Cost metrics exclude WIP purge transfers and include projected costs. The transaction history retains the full ledger.</p>
             </div>
             <div class="report-generated">Generated ${this.escapeHtml(generatedAt)}</div>
           </div>

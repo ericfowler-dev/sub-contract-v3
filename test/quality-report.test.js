@@ -15,6 +15,8 @@ const transactions = [
   { date: '2026-02-05', net: 35.50, vendorName: 'Rock Enterprises Inc' },
   { date: '2026-03-05', net: -10, vendorName: 'Vendor A' },
   { date: '2025-12-01', net: 999, vendorName: 'Vendor A' },
+  { date: '2026-01-12', net: -80.01, type: 'MFG-VAR', ref: 'Purge WIP to Variance', vendorName: 'Internal / Non-Vendor', job: '200834-S1' },
+  { date: '2026-02-14', net: -500, type: 'MFG-VAR', ref: 'Purge WIP to Cost of Sales', vendorName: 'Internal / Non-Vendor', job: '200834-S1' },
 ];
 
 test('monthly net costs include offsets, zero-fill gaps and total exact cents', () => {
@@ -22,6 +24,8 @@ test('monthly net costs include offsets, zero-fill gaps and total exact cents', 
   assert.deepEqual(report.months.map(month => month.net), [80.01, 0, -10]);
   assert.equal(report.total, 70.01);
   assert.equal(report.transactionCount, 3);
+  assert.equal(report.excludedWipTransferCount, 2);
+  assert.equal(report.excludedWipTransferNet, -580.01);
   assert.equal(report.latestDate, '2026-03-05');
   assert.equal(buildQualityReport(transactions, { year: 2026, throughMonth: 1 }).total, 80.01);
   assert.equal(buildQualityReport(transactions, { year: 2026, throughMonth: 3 }).total, 105.51);
@@ -41,7 +45,7 @@ test('year defaults, empty years and invalid selections are handled explicitly',
 test('summary CSV preserves cents and identifies the report basis and exclusions', () => {
   const report = buildQualityReport(transactions, { year: 2026, throughMonth: 3, excludeRock: true });
   const csv = buildQualityReportCsv(report);
-  assert.match(csv, /projected costs excluded/);
+  assert.match(csv, /projected costs and WIP purge transfers excluded/);
   assert.match(csv, /Excludes Rock Enterprises/);
   const workbook = XLSX.read(csv, { type: 'string', raw: true });
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
@@ -67,7 +71,7 @@ test('quality API ignores projected costs and matches the filtered transaction e
   const base = `http://127.0.0.1:${server.address().port}`;
   const report = await (await fetch(`${base}/api/quality-report?year=2026&throughMonth=3&excludeRock=1`)).json();
   assert.equal(report.total, 70.01);
-  const csv = await (await fetch(`${base}/api/export?startDate=2026-01-01&endDate=2026-03-31&excludeVendors=Rock%20Enterprises`)).text();
+  const csv = await (await fetch(`${base}/api/export?startDate=2026-01-01&endDate=2026-03-31&excludeVendors=Rock%20Enterprises&excludeWipTransfers=1`)).text();
   const workbook = XLSX.read(csv, { type: 'string', raw: true });
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
   assert.equal(rows[0].Vendor, 'Vendor, "A"');
@@ -77,4 +81,28 @@ test('quality API ignores projected costs and matches the filtered transaction e
   const exported = await fetch(`${base}/api/quality-report?year=2026&throughMonth=3&excludeRock=1&format=csv`);
   assert.match(exported.headers.get('content-disposition'), /quality-report-2026-03.csv/);
   assert.equal(await exported.text(), buildQualityReportCsv(report));
+  const ledger = await (await fetch(`${base}/api/transactions?startDate=2026-01-01&endDate=2026-03-31`)).json();
+  assert.equal(ledger.total, 6, 'Ledger retains WIP transfers');
+  const summary = await (await fetch(`${base}/api/summary?startDate=2026-01-01&endDate=2026-03-31&excludeVendors=Rock%20Enterprises`)).json();
+  assert.equal(summary.netCostToPSI, 500070.01, 'WIP transfers do not offset cost metrics');
+  assert.equal(summary.excludedWipTransfers, 580.01);
+  const timeline = await (await fetch(`${base}/api/spend-over-time?startDate=2026-01-01&endDate=2026-03-31&excludeVendors=Rock%20Enterprises`)).json();
+  assert.equal(Math.round(timeline.reduce((sum, month) => sum + month.net, 0) * 100), 7001);
+});
+
+test('only identified WIP transfers are excluded; customer credits and ordinary adjustments remain', () => {
+  const { isWipTransfer, computeSummary, computeJobsiteBreakdown, computeTypeBreakdown } = require('../server/services/analytics');
+  assert.equal(isWipTransfer({ type: 'MFG-VAR', ref: ' purge WIP to Variance ' }), true);
+  assert.equal(isWipTransfer({ type: 'MFG-VAR', ref: 'Purge WIP to Cost of Sales' }), true);
+  assert.equal(isWipTransfer({ type: 'MFG-CUS', ref: 'Customer reimbursement' }), false);
+  assert.equal(isWipTransfer({ type: 'MFG-VAR', ref: 'Invoice cost correction' }), false);
+  const rows = [
+    { date: '2026-01-01', year: 2026, month: 1, type: 'PUR-SUB', net: 100, debit: 100, baseJob: '200834' },
+    { date: '2026-01-02', year: 2026, month: 1, type: 'MFG-CUS', net: -20, baseJob: '200834' },
+    { date: '2026-01-03', year: 2026, month: 1, type: 'MFG-VAR', net: -5, ref: 'Invoice cost correction', baseJob: '200834' },
+    { date: '2026-01-04', year: 2026, month: 1, type: 'MFG-VAR', net: -75, ref: 'Purge WIP to Variance', baseJob: '200834' },
+  ];
+  assert.equal(computeSummary(rows, {}).netCostToPSI, 75);
+  assert.equal(computeJobsiteBreakdown(rows, {})[0].net, 75);
+  assert.equal(computeTypeBreakdown(rows)[0]['MFG-VAR'], -5);
 });

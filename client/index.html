@@ -12,7 +12,7 @@
     <div class="header-left">
       <h1>PSI Field Service Sub-Contract Dashboard</h1>
       <span class="header-subtitle">Ship Complete Strategy Baseline Analytics</span>
-      <span id="app-version" class="version-chip">v1.7.0</span>
+      <span id="app-version" class="version-chip">v1.7.1</span>
     </div>
     <div class="header-right">
       <span id="auth-user-email" class="auth-user-email hidden"></span>
@@ -82,14 +82,14 @@
       <div class="kpi-sub">MFG-CUS offsets</div>
     </div>
     <div class="kpi-card kpi-credit">
-      <div class="kpi-label">Accounting Adjustments</div>
+      <div class="kpi-label">WIP Transfers (Excluded)</div>
       <div class="kpi-value" id="kpi-accounting-adj">--</div>
-      <div class="kpi-sub">MFG-VAR adjustments</div>
+      <div class="kpi-sub">Bookkeeping transfers; not cost offsets</div>
     </div>
     <div class="kpi-card kpi-net">
       <div class="kpi-label">Net Cost to PSI</div>
       <div class="kpi-value" id="kpi-net-cost">--</div>
-      <div class="kpi-sub">After all offsets</div>
+      <div class="kpi-sub">Includes projections; excludes WIP transfers</div>
     </div>
     <div class="kpi-card kpi-info">
       <div class="kpi-label">Date Range</div>
@@ -172,12 +172,13 @@
     <div class="data-table-header">
       <div class="data-table-heading">
         <h2>Transaction Data</h2>
+        <div class="table-summary">Full ledger history, including WIP purge transfers excluded from cost metrics. Use Quality Report for cost-only totals and exports.</div>
         <div id="transaction-table-summary" class="table-summary">Search by jobsite, vendor, description, service order, or ref.</div>
       </div>
       <div class="table-actions">
         <button id="btn-print-report" class="btn btn-secondary">Print / PDF</button>
         <button id="btn-export-jpeg" class="btn btn-secondary">Export JPEG</button>
-        <button id="btn-export-csv" class="btn btn-secondary">Export CSV</button>
+        <button id="btn-export-csv" class="btn btn-secondary">Export Ledger CSV</button>
       </div>
     </div>
     <div class="table-search-row">

@@ -1,4 +1,4 @@
-const { applyFilters } = require('./analytics');
+const { applyFilters, isWipTransfer } = require('./analytics');
 
 function buildQualityReport(transactions, options = {}) {
   const dates = transactions.map(row => row.date).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date || '')).sort();
@@ -12,7 +12,9 @@ function buildQualityReport(transactions, options = {}) {
   const excludeRock = options.excludeRock === true;
   const startDate = `${year}-01-01`;
   const endDate = `${year}-${String(throughMonth).padStart(2, '0')}-${new Date(Date.UTC(year, throughMonth, 0)).getUTCDate()}`;
-  const rows = applyFilters(transactions, { startDate, endDate, excludeVendors: excludeRock ? ['Rock Enterprises'] : null });
+  const ledgerRows = applyFilters(transactions, { startDate, endDate, excludeVendors: excludeRock ? ['Rock Enterprises'] : null });
+  const transfers = ledgerRows.filter(isWipTransfer);
+  const rows = ledgerRows.filter(row => !isWipTransfer(row));
   const months = Array.from({ length: throughMonth }, (_, index) => ({ month: `${year}-${String(index + 1).padStart(2, '0')}`, cents: 0, transactionCount: 0 }));
   for (const row of rows) {
     const bucket = months[Number(row.date.slice(5, 7)) - 1];
@@ -23,6 +25,8 @@ function buildQualityReport(transactions, options = {}) {
   return {
     year, throughMonth, availableYears, latestDate, startDate, endDate, excludeRock,
     transactionCount: rows.length,
+    excludedWipTransferCount: transfers.length,
+    excludedWipTransferNet: transfers.reduce((sum, row) => sum + Math.round(row.net * 100), 0) / 100,
     total: months.reduce((sum, month) => sum + month.cents, 0) / 100,
     months: months.map(({ cents, ...month }) => ({ ...month, net: cents / 100 })),
   };
@@ -33,9 +37,10 @@ function buildQualityReportCsv(report) {
   const rows = [
     ['PSI Field Service Sub-Contract Quality Report'],
     ['Year', report.year, 'Through', labels[report.throughMonth - 1]],
-    ['Basis', 'Posted net costs; projected costs excluded'],
+    ['Basis', 'Posted net costs; projected costs and WIP purge transfers excluded'],
     ['Vendors', report.excludeRock ? 'Excludes Rock Enterprises (PDX exhaust stack rust)' : 'All vendors'],
     ['Latest transaction loaded for year', report.latestDate || 'None'],
+    ['Excluded WIP transfer rows', report.excludedWipTransferCount],
     [],
     ['Month', ...report.months.map(month => labels[Number(month.month.slice(5)) - 1]), 'YTD Total'],
     ['Net cost (USD)', ...report.months.map(month => month.net.toFixed(2)), report.total.toFixed(2)],

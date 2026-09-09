@@ -66,7 +66,7 @@
       status.textContent = data.transactionCount ? '' : 'No posted transactions for this selection.';
       status.classList.toggle('hidden', data.transactionCount > 0);
       tableWrap.classList.toggle('hidden', !data.transactionCount);
-      document.getElementById('quality-data-note').textContent = `${Fmt.number(data.transactionCount)} posted transactions in this report. ${data.latestDate ? `Latest transaction loaded for ${data.year}: ${Fmt.date(data.latestDate)}. Months may change as Accounting posts additional transactions.` : 'No transactions loaded for this year.'}`;
+      document.getElementById('quality-data-note').textContent = `${Fmt.number(data.transactionCount)} cost transactions in this report. ${Fmt.number(data.excludedWipTransferCount)} WIP transfers excluded. ${data.latestDate ? `Latest transaction loaded for ${data.year}: ${Fmt.date(data.latestDate)}. Months may change as Accounting posts additional transactions.` : 'No transactions loaded for this year.'}`;
       actions.forEach(button => { button.disabled = !data.transactionCount; });
     } catch (error) {
       if (request !== activeRequest) return;
@@ -84,7 +84,7 @@
     window.location.href = `/api/quality-report?${displayedQuery}&format=csv`;
   });
   document.getElementById('quality-transactions').addEventListener('click', () => {
-    const params = new URLSearchParams({ startDate: report.startDate, endDate: report.endDate });
+    const params = new URLSearchParams({ startDate: report.startDate, endDate: report.endDate, excludeWipTransfers: '1' });
     if (report.excludeRock) params.set('excludeVendors', 'Rock Enterprises');
     window.location.href = `/api/export?${params}`;
   });
