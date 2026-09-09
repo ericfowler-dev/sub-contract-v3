@@ -10,7 +10,7 @@ const { getDefaultDb } = require('../server/models/schema');
 const { saveDb, invalidateCache } = require('../server/services/db');
 
 const transactions = [
-  { date: '2026-01-04', net: 100.12, vendorName: 'Vendor A' },
+  { date: '2026-01-04', net: 100.12, vendorName: 'Vendor, "A"', description: 'First line\nSecond line' },
   { date: '2026-01-10', net: -20.11, vendorName: 'Internal / Non-Vendor' },
   { date: '2026-02-05', net: 35.50, vendorName: 'Rock Enterprises Inc' },
   { date: '2026-03-05', net: -10, vendorName: 'Vendor A' },
@@ -70,6 +70,8 @@ test('quality API ignores projected costs and matches the filtered transaction e
   const csv = await (await fetch(`${base}/api/export?startDate=2026-01-01&endDate=2026-03-31&excludeVendors=Rock%20Enterprises`)).text();
   const workbook = XLSX.read(csv, { type: 'string', raw: true });
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+  assert.equal(rows[0].Vendor, 'Vendor, "A"');
+  assert.equal(rows[0].Description, 'First line\nSecond line');
   assert.equal(rows.reduce((sum, row) => sum + Math.round(Number(row.Net) * 100), 0), Math.round(report.total * 100));
   assert.equal((await fetch(`${base}/api/quality-report?year=invalid`)).status, 400);
   const exported = await fetch(`${base}/api/quality-report?year=2026&throughMonth=3&excludeRock=1&format=csv`);

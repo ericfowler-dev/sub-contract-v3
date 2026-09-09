@@ -619,14 +619,18 @@ router.get('/export', (req, res) => {
     t.category,
     t.type,
     t.vendorName,
-    `"${(t.description || '').replace(/"/g, '""')}"`,
+    t.description || '',
     t.debit,
     t.credit,
     t.net,
-    `"${(t.ref || '').replace(/"/g, '""')}"`,
+    t.ref || '',
   ]);
 
-  const csv = [csvHeaders.join(','), ...csvRows.map(r => r.join(','))].join('\n');
+  // Every text field can contain commas, quotes or newlines (including vendor
+  // and jobsite names). Escape every column to preserve the exported amounts.
+  const csv = [csvHeaders, ...csvRows]
+    .map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=subcontract-export.csv');
