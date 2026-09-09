@@ -15,11 +15,11 @@ function tempDir(t) {
   return dir;
 }
 
-function fixture(filePath, { service = 'Service', net = 100, error = false } = {}) {
+function fixture(filePath, { service = 'Service', net = 100, error = false, type = 'PUR-SUB', job = '200834-S1' } = {}) {
   const sheet = XLSX.utils.aoa_to_sheet([
     ['Inventory WIP Reconciliation Report'], [], [],
     ['Account', 'Date', 'Type', 'Posted', 'Job', 'Debit', 'Credit', 'Net', 'Ref', 'Date_2', 'Part', 'Description', 'Month', 'YEAR', 'Vendor', 'Vendor Name', 'Pivot', 'Service'],
-    ['WIP', 46023, 'PUR-SUB', 'Y', '200834-S1', 100, 0, net, 'Supplier: 1 PS: 123', '', '', '', 1, 2026, 1, 'Vendor', '', service],
+    ['WIP', 46023, type, 'Y', job, 100, 0, net, 'Supplier: 1 PS: 123', '', '', '', 1, 2026, 1, 'Vendor', '', service],
   ]);
   if (error) sheet.H5 = { t: 'e', v: 7 };
   const workbook = XLSX.utils.book_new();
@@ -90,6 +90,20 @@ test('empty, erroneous and unreconciled workbooks are rejected', t => {
   assert.throws(() => parseExcelFile(file), /Net does not equal/);
 });
 
+test('untagged service credits are included, while production and untagged spend stay excluded', t => {
+  const dir = tempDir(t), file = path.join(dir, 'input.xlsx');
+  for (const type of ['MFG-CUS', 'MFG-VAR']) {
+    fixture(file, { service: '', type });
+    assert.equal(parseExcelFile(file).length, 1);
+  }
+  fixture(file, { service: '', type: 'MFG-CUS', job: '200834-12' });
+  assert.throws(() => parseExcelFile(file), /No Service transactions/);
+  fixture(file, { service: 'Production', type: 'MFG-CUS' });
+  assert.throws(() => parseExcelFile(file), /No Service transactions/);
+  fixture(file, { service: '' });
+  assert.throws(() => parseExcelFile(file), /No Service transactions/);
+});
+
 test('upload failures and successful replacements preserve projections', async t => {
   const dir = tempDir(t);
   const data = getDefaultDb();
@@ -126,7 +140,8 @@ test('upload failures and successful replacements preserve projections', async t
   const response = await pending;
   const result = await response.json();
   assert.equal(response.status, 200, JSON.stringify(result));
-  assert.equal(result.rowsAdded, file === historical ? 421 : 1);
+  // Replace mode retains every source row, including identical legitimate lines.
+  assert.equal(result.rowsAdded, file === historical ? 483 : 1);
   assert.deepEqual(loadDb(dir).projections, data.projections);
   assert.equal(loadDb(dir).metadata.totalRows, result.rowsAdded);
   assert.deepEqual(fs.readdirSync(app.locals.uploadsDir), []);

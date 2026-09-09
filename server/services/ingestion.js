@@ -49,7 +49,12 @@ function parseExcelFile(filePath) {
     }
 
     const serviceVal = String(row[serviceColIdx] || '').trim();
-    if (serviceVal !== 'Service') continue;
+    // Accounting exports can omit the Service tag on service-order credits
+    // and variances. Include those offsets so net costs are not overstated.
+    const serviceJob = /^\d{6}-S\d+$/i.test(String(row[headerMap['Job']] || '').trim());
+    const type = String(row[headerMap['Type']] || '').trim();
+    const untaggedServiceOffset = !serviceVal && serviceJob && ['MFG-CUS', 'MFG-VAR'].includes(type);
+    if (serviceVal !== 'Service' && !untaggedServiceOffset) continue;
 
     for (const name of required) {
       if (sheet[i]?.[headerMap[name]]?.t === 'e') {

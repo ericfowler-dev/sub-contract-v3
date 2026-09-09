@@ -1,0 +1,41 @@
+.quality-main { max-width: 1600px; margin: 36px auto; padding: 0 24px; }
+.quality-heading h2 { font-size: 26px; margin-bottom: 8px; }
+.quality-heading p, .quality-sheet-header p { color: var(--text-secondary); }
+.quality-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 20px; margin: 28px 0; }
+.quality-controls label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 500; }
+.quality-controls select { padding: 10px 32px 10px 12px; border: 1px solid var(--border-hover); border-radius: 6px; background: white; font: inherit; }
+.quality-controls .quality-exclusion { flex-direction: row; align-items: center; align-self: center; font-weight: 400; }
+.quality-exclusion input { width: 17px; height: 17px; }
+.quality-sheet { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 24px; }
+.quality-sheet-header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.quality-sheet-header h3 { font-size: 18px; margin-bottom: 4px; }
+.quality-sheet-header p { font-size: 13px; }
+.quality-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.quality-table-wrap { overflow-x: auto; }
+.quality-table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.quality-table th, .quality-table td { border: 1px solid #94a3b8; padding: 12px 14px; white-space: nowrap; text-align: right; }
+.quality-table thead th { background: #f8fafc; text-align: left; font-size: 14px; }
+.quality-table tbody th { text-align: left; font-weight: 500; }
+.quality-table td { font-weight: 600; }
+.quality-table .quality-total { background: #eff6ff; font-weight: 700; }
+.quality-data-note { margin-top: 18px; font-size: 13px; color: var(--text-secondary); }
+.quality-footnote { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+#quality-status { color: var(--text-secondary); }
+.quality-page a.btn { text-decoration: none; }
+@media (max-width: 768px) {
+  .quality-main { padding: 0 16px; margin-top: 24px; }
+  .quality-sheet { padding: 16px; }
+  .quality-heading h2 { font-size: 22px; }
+}
+@media print {
+  @page { size: landscape; margin: 12mm; }
+  .quality-page { background: white; }
+  .quality-page .header { position: static; box-shadow: none; padding: 0 0 16px; }
+  .quality-page .header a, .quality-controls, .quality-actions { display: none !important; }
+  .quality-main { margin: 24px 0 0; padding: 0; }
+  .quality-sheet { border: none; padding: 20px 0; }
+  .quality-table-wrap { overflow: visible; }
+  .quality-table { font-size: 10px; }
+  .quality-table th, .quality-table td { padding: 7px 5px; }
+  .quality-table thead th { font-size: 10px; }
+}

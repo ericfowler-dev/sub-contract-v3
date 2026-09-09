@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const packageJson = require('../../package.json');
 const { loadDb, saveDb } = require('../services/db');
+const { buildQualityReport, buildQualityReportCsv } = require('../services/quality-report');
 const {
   computeSummary,
   computeSpendOverTime,
@@ -560,6 +561,28 @@ router.delete('/projections/:id', (req, res) => {
   db.projections = db.projections.filter(p => p.id !== req.params.id);
   saveDb(req.app.locals.dataDir, db);
   res.json({ success: true });
+});
+
+// GET /api/quality-report - posted transactions only, with optional CSV export
+router.get('/quality-report', (req, res) => {
+  const db = loadDb(req.app.locals.dataDir);
+  let report;
+  try {
+    report = buildQualityReport(db.transactions, {
+      year: req.query.year,
+      throughMonth: req.query.throughMonth,
+      excludeRock: req.query.excludeRock === '1',
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.query.format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="quality-report-${report.year}-${String(report.throughMonth).padStart(2, '0')}.csv"`);
+    return res.send(buildQualityReportCsv(report));
+  }
+  res.json(report);
 });
 
 // GET /api/backup - complete authenticated database export for recovery

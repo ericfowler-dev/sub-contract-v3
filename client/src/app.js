@@ -633,7 +633,7 @@ const App = {
         status.classList.remove('data-status-active');
       }
       if (versionChip) {
-        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.6.1';
+        versionChip.textContent = meta.appVersion ? `v${meta.appVersion}` : 'v1.7.0';
       }
       this.updateProjectionWindowNote();
     } catch (err) { /* ignore */ }
