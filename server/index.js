@@ -12,7 +12,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Ensure data directories exist
-const dataDir = process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, 'data');
+const isHosted = process.env.RENDER === 'true' || Boolean(process.env.RENDER_SERVICE_ID) || Boolean(process.env.RENDER_EXTERNAL_URL);
+const dataDir = process.env.DATA_DIR || (isHosted || process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, 'data'));
+if (isHosted && !fs.existsSync(dataDir)) {
+  throw new Error(`Persistent data directory ${dataDir} is unavailable. Refusing to use temporary storage.`);
+}
 const uploadsDir = path.join(dataDir, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -63,6 +67,12 @@ app.use(express.static(path.join(__dirname, '..', 'client')));
 
 app.use('/api/upload', uploadRouter);
 app.use('/api', apiRouter);
+
+app.use((err, req, res, next) => {
+  console.error('Request failed:', err.message);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: err.message });
+});
 
 // SPA fallback
 app.get('*', (req, res) => {

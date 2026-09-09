@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { parseExcelFile } = require('../services/ingestion');
+const { parseExcelFileIsolated } = require('../services/ingestion-process');
 const { loadDb, saveDb } = require('../services/db');
 
 const router = express.Router();
@@ -30,7 +30,7 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-router.post('/', upload.single('file'), (req, res) => {
+router.post('/', upload.single('file'), async (req, res) => {
   const filePath = req.file?.path;
 
   try {
@@ -39,10 +39,13 @@ router.post('/', upload.single('file'), (req, res) => {
     }
 
     const mode = req.body.mode || 'append'; // 'append' or 'replace'
+    if (!['append', 'replace'].includes(mode)) {
+      return res.status(400).json({ error: 'Upload mode must be append or replace.' });
+    }
     const fileName = req.file.originalname;
 
     // Parse the Excel file
-    const newRows = parseExcelFile(filePath);
+    const newRows = await parseExcelFileIsolated(filePath);
 
     const db = loadDb(req.app.locals.dataDir);
 

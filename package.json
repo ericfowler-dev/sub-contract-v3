@@ -1,9 +1,10 @@
 {
   "name": "psi-subcontract-dashboard",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "PSI Field Service Sub-Contract Expenditure Dashboard",
   "main": "server/index.js",
   "scripts": {
+    "test": "node --test",
     "start": "node server/index.js",
     "dev": "node --watch server/index.js"
   },

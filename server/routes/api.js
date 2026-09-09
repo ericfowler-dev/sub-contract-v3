@@ -562,6 +562,14 @@ router.delete('/projections/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/backup - complete authenticated database export for recovery
+router.get('/backup', (req, res) => {
+  const db = loadDb(req.app.locals.dataDir);
+  res.setHeader('Content-Disposition', `attachment; filename="dashboard-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(db);
+});
+
 // GET /api/metadata
 router.get('/metadata', (req, res) => {
   const db = loadDb(req.app.locals.dataDir);
